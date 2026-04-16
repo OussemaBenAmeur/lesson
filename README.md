@@ -26,16 +26,14 @@ A single markdown file at `.claude/lessons/output/<slug>.md` containing:
 
 ## Quickstart
 
-```bash
-# 1. Clone the plugin
-git clone https://github.com/oussemabenameur/lesson-plugin ~/.claude/plugins/lesson
+Inside Claude Code:
 
-# 2. In Claude Code, register it
-/plugin marketplace add ~/.claude/plugins
-/plugin install lesson
-
-# 3. Restart Claude Code (hooks are loaded at session start)
 ```
+/plugin marketplace add OussemaBenAmeur/lesson
+/plugin install lesson
+```
+
+Then restart Claude Code — hooks and commands register at session start, so the first session after install is when it becomes active.
 
 Then, in any project:
 
@@ -61,29 +59,27 @@ Your lesson is now at `.claude/lessons/output/<slug>.md`. Open it, read it, comm
 
 ### From GitHub (recommended)
 
-```bash
-git clone https://github.com/oussemabenameur/lesson-plugin ~/.claude/plugins/lesson
-```
-
-Then inside Claude Code:
+Inside Claude Code:
 
 ```
-/plugin marketplace add ~/.claude/plugins
+/plugin marketplace add OussemaBenAmeur/lesson
 /plugin install lesson
 ```
 
 Restart your Claude Code session. Hooks and commands register at session start, so the first session after install is when it becomes active.
 
-### Local dev (if you cloned to a different location)
+### Local dev
+
+Clone the repo anywhere and add it as a local marketplace:
+
+```bash
+git clone https://github.com/OussemaBenAmeur/lesson.git
+```
+
+Then in Claude Code:
 
 ```
-/plugin install /absolute/path/to/lesson-plugin
-```
-
-Or add the parent directory as a local marketplace:
-
-```
-/plugin marketplace add /absolute/path/to/parent-dir
+/plugin marketplace add /absolute/path/to/lesson
 /plugin install lesson
 ```
 

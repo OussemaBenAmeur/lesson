@@ -1,0 +1,14 @@
+{
+  "name": "lesson",
+  "owner": {
+    "name": "Oussema Ben Ameur",
+    "url": "https://github.com/OussemaBenAmeur"
+  },
+  "plugins": [
+    {
+      "name": "lesson",
+      "source": ".",
+      "description": "Turn a Claude Code debugging session into a textbook-quality lesson grounded in your real code, errors, and attempts."
+    }
+  ]
+}
