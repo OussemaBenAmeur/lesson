@@ -1,7 +1,7 @@
 {
   "name": "lesson",
-  "version": "0.1.0",
-  "description": "Turn a Claude Code debugging session into a textbook-quality lesson. Instruments the session via PostToolUse hooks, tracks the problem-solving arc, researches the underlying concept on the web, and emits a grounded markdown lesson with real code, diagrams, and a closing exercise.",
+  "version": "0.2.0",
+  "description": "Turn any AI-assisted working session into a textbook-quality lesson. Tracks the problem-solving arc via hooks or manual logging, builds a session knowledge graph, and emits a grounded markdown+PDF lesson with diagrams, a quiz, and cross-session learner memory. Works on Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot CLI, OpenCode, OpenClaw, Factory Droid, Trae, and Google Antigravity.",
   "author": {
     "name": "Oussema Ben Ameur"
   },
@@ -14,6 +14,20 @@
     "lesson",
     "debugging",
     "claude-code",
+    "multi-platform",
     "plugin"
-  ]
+  ],
+  "platforms": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "gemini",
+    "copilot",
+    "opencode",
+    "openclaw",
+    "droid",
+    "trae",
+    "antigravity"
+  ],
+  "install": "python3 scripts/install.py --platform <platform>"
 }
