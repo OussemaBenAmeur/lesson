@@ -6,11 +6,14 @@ cwd has an active lesson session (marker file present), append one compressed
 event line to arc.jsonl, bump the counter, and — at threshold — emit an
 additionalContext reminder telling Claude to spawn the lesson-compress subagent.
 
+Each event is tagged with `significant: true/false` using cheap Python heuristics
+so the compression subagent can prioritise which events to promote to graph nodes
+without re-reading everything.
+
 Design notes:
 - This hook is always installed (via the plugin manifest) but is a cheap
   no-op in any project that does not have .claude/lessons/active-session.
-- The hook does NOT summarize. Summarization is a Claude job done via the
-  compression subagent. The hook just appends truncated raw events.
+- The hook does NOT summarize or call any LLM. It only appends, counts, and signals.
 - The hook must never crash: any exception should exit 0 silently so it
   cannot block the user's real tool calls.
 """
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -26,6 +30,58 @@ from pathlib import Path
 COMPRESS_EVERY = int(os.environ.get("LESSON_COMPRESS_EVERY", "25"))
 ARGS_CAP = 500
 RESULT_CAP = 1000
+
+# Tools whose invocation is always worth noting in the graph (user changed something).
+_SIGNIFICANT_TOOLS = {"Edit", "Write", "NotebookEdit"}
+
+# Substrings that, when present in a Bash result, indicate an error or important discovery.
+_SIGNIFICANT_BASH_PATTERNS = [
+    "error",
+    "failed",
+    "not found",
+    "no such file",
+    "permission denied",
+    "mismatch",
+    "cannot",
+    "unable to",
+    "exception",
+    "traceback",
+    "fatal",
+    "warning:",
+    "refused",
+    "denied",
+    "unrecognized",
+    "invalid",
+    "undefined",
+    "missing",
+]
+
+_VERSION_RE = re.compile(r"\b\d+\.\d+[\.\d]*\b")
+
+
+def _has_version_string(text: str) -> bool:
+    return bool(_VERSION_RE.search(text))
+
+
+def _is_significant(tool_name: str, result_text: str, is_error: bool) -> bool:
+    """Return True if this event is likely worth promoting to a graph node.
+
+    Heuristics only — no LLM. The compression subagent makes the final call;
+    this flag is a prioritisation hint, not a hard filter.
+    """
+    if is_error:
+        return True
+    if tool_name in _SIGNIFICANT_TOOLS:
+        return True
+    if tool_name == "Bash":
+        lower = result_text.lower()
+        if any(p in lower for p in _SIGNIFICANT_BASH_PATTERNS):
+            return True
+        # Short output containing version strings suggests a version comparison
+        # or state-check — common pivotal moments in debugging sessions.
+        if len(result_text) < 500 and _has_version_string(result_text):
+            return True
+    return False
 
 
 def _safe_str(value) -> str:
@@ -102,12 +158,15 @@ def main() -> int:
     result_head, is_error = _extract_result(tool_response)
     result_head = result_head[:RESULT_CAP]
 
+    significant = _is_significant(tool_name, result_head, is_error)
+
     entry = {
         "ts": time.time(),
         "tool": tool_name,
         "args": args_summary,
         "result_head": result_head,
         "is_error": is_error,
+        "significant": significant,
     }
 
     try:
@@ -138,9 +197,10 @@ def main() -> int:
             f"[/lesson] Tracked session '{slug}' has accumulated {count} raw events "
             f"since the last compression. Before doing anything else, spawn a Task "
             f"subagent of type 'lesson-compress' with this prompt:\n\n"
-            f"    Compress the /lesson arc log at {session_dir}. Merge arc.jsonl "
-            f"into summary.md, archive the consumed raw events to arc.jsonl.archive.N, "
-            f"then write a fresh empty arc.jsonl. Follow the lesson-compress skill "
+            f"    Compress the /lesson arc log at {session_dir}. Read arc.jsonl and "
+            f"extend session_graph.json with new nodes and edges derived from the events. "
+            f"Prioritise events where significant=true. Archive arc.jsonl to "
+            f"arc.jsonl.archive.N and reset it. Follow the lesson-compress skill "
             f"instructions exactly. Report one line when done.\n\n"
             f"This keeps the main context lean. Do not read arc.jsonl yourself."
         )

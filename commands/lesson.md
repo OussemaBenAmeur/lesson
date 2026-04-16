@@ -25,11 +25,13 @@ Inside `.claude/lessons/sessions/<slug>/`, write:
   ```json
   {
     "slug": "<slug>",
-    "goal": "<user's goal, or empty string>",
+    "goal": "<user's goal or topic, or empty string>",
+    "notes": "<same as goal — used by /lesson-done to calibrate generation depth and style>",
     "started_at": "<ISO 8601 UTC timestamp>",
     "cwd": "<absolute path of the current working directory>"
   }
   ```
+  Both `goal` and `notes` are set to the full `$ARGUMENTS` text. `goal` is used for display in the lesson header; `notes` is read by `/lesson-done` as generation instructions. The user can include style hints directly in their argument: `/lesson asyncio blocking — explain from absolute scratch, I barely know Python` is valid and useful.
 - **`arc.jsonl`** — empty file (zero bytes). This is where the hook will append events.
 - **`summary.md`** — empty file. The compression subagent will populate this.
 - **`counter`** — file containing the single character `0` (no newline).
@@ -52,6 +54,11 @@ Print a short confirmation, exactly in this shape:
 
 Work normally. When you're done, run /lesson-done to generate the lesson
 (or just stop — the Stop hook will nudge you).
+
+Tip: your argument also guides how the lesson is written. Examples:
+  /lesson I barely know Linux — explain everything from first principles
+  /lesson asyncio issue — I know Python well, skip basic async theory
+  /lesson (no argument) — lesson will use a neutral depth
 ```
 
 ## Notes
