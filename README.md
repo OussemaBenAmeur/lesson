@@ -1,299 +1,345 @@
-# `/lesson` — turn debugging sessions into textbook lessons
+# lesson
 
-A [Claude Code](https://claude.com/claude-code) plugin that watches your real problem-solving sessions and produces grounded, textbook-quality markdown lessons from them — using *your* code, *your* errors, and *your* wrong turns as the raw material.
+**A Claude Code plugin that turns real debugging sessions into grounded, reusable lessons.**
 
-Instead of reading a generic "Intro to async Python" article, you get a lesson that says: *"Here is the exact line in `worker.py` where you called a coroutine without awaiting it. Here is the mental model you were missing. Here is how it shows up in the asyncio docs. Here is an exercise to fix the other three places in your code where the same mistake is lurking."*
+`lesson` watches the tool activity inside a live Claude Code session, keeps a compact record of the important turns, and turns the final arc into a lesson built from your actual files, commands, errors, and wrong assumptions.
 
----
+Instead of generating a generic tutorial from scratch, it produces a lesson about what really happened:
 
-## Why
+- what you were trying to do
+- where it broke
+- which concept was actually missing
+- why the misconception was believable
+- what fixed it
+- how to test whether you now understand it
 
-LLMs are great at generating tutorials. They are not great at knowing *which* tutorial *you* needed. By the time you've been stuck on a bug for 40 minutes, you've generated enough signal to pinpoint the exact misconception — you just don't have a good way to capture it.
-
-`/lesson` captures it. It silently records your debugging arc via Claude Code hooks, identifies the one fundamental concept that would have prevented the whole episode, researches it, and writes a lesson that's impossible to write from cold.
-
-## What you get
-
-A single markdown file at `.claude/lessons/output/<slug>.md` containing:
-
-- **Narrative of what broke** — with real snippets and real error messages from your session
-- **The concept, explained** — textbook-style prose with inline citations to authoritative sources (MDN, official docs, etc.)
-- **Two mermaid diagrams** — one of the concept, one of the actual debug path you took (with the misconception marked)
-- **Curated resources** — 3–5 links, hand-picked from what Claude fetched
-- **A closing exercise grounded in your code** — not a generic problem; something you can verify against your own files
-
----
-
-## Quickstart
-
-Inside Claude Code:
-
-```
-/plugin marketplace add OussemaBenAmeur/lesson
-/plugin install lesson
-```
-
-Then restart Claude Code — hooks and commands register at session start, so the first session after install is when it becomes active.
-
-Then, in any project:
-
-```
-/lesson python asyncio event loop blocking on cpu work
-```
-
-Work normally. Hit errors. Try things. Edit files. Fix things.
-
-When you're done:
-
-```
+```text
+/lesson react useEffect infinite loop when depending on an object
+# work normally in Claude Code
 /lesson-done
 ```
 
-Your lesson is now at `.claude/lessons/output/<slug>.md`. Open it, read it, commit it, share it — it's just markdown.
+```text
+.claude/lessons/
+├── sessions/<slug>/
+│   ├── meta.json
+│   ├── arc.jsonl
+│   ├── session_graph.json      # created after the first compression cycle
+│   └── arc.jsonl.archive.N
+└── output/
+    ├── <slug>.md
+    ├── <slug>.pdf              # optional
+    ├── index.html
+    └── map.html
+```
 
-> If you just close Claude Code without running `/lesson-done`, the Stop hook will nudge you to generate the lesson first. If you want to bail without generating anything, delete `.claude/lessons/active-session` and try again.
+## Why This Exists
 
----
+Most learning tools start with a topic and invent an explanation.
+
+`lesson` starts with a real failure path.
+
+That difference matters. A debugging session contains high-quality teaching signal: the commands you ran, the outputs you misread, the hypotheses you formed, the file edits you tried, and the observation that finally changed your mind. That is the raw material a serious lesson should be built from.
+
+| Generic tutorial | `lesson` |
+| --- | --- |
+| Starts from an abstract topic | Starts from your actual session |
+| Uses canned examples | Uses your files, errors, and commands |
+| Explains the concept in general | Explains why *you* got stuck |
+| Often guesses at relevance | Has a concrete debugging arc to teach from |
+
+## What Ships Today
+
+- Session tracking via Claude Code `PostToolUse` and `Stop` hooks
+- Graph-based compression so long sessions stay manageable
+- Canonical markdown lesson output
+- Best-effort PDF rendering with Mermaid diagrams
+- `/regenerate` to rewrite the latest lesson with new guidance
+- `/lesson resume` to continue a paused session
+- `/lesson-index` to build a browsable lesson list
+- `/lesson-map` to build a concept map across generated lessons
 
 ## Install
 
-### From GitHub (recommended)
+### Requirements
+
+- Claude Code
+- Python 3.10+
+- Optional for PDF export:
+  - `npx` with `@mermaid-js/mermaid-cli`
+  - `pandoc` plus `weasyprint`, `wkhtmltopdf`, `xelatex`, or `pdflatex`
+  - or a Chromium-based browser for the fallback renderer
+
+### From GitHub Marketplace
 
 Inside Claude Code:
 
-```
+```text
 /plugin marketplace add OussemaBenAmeur/lesson
 /plugin install lesson
 ```
 
-Restart your Claude Code session. Hooks and commands register at session start, so the first session after install is when it becomes active.
+Restart Claude Code after install. The hooks and commands are registered when the session starts.
 
-### Local dev
-
-Clone the repo anywhere and add it as a local marketplace:
+### Local Development Install
 
 ```bash
 git clone https://github.com/OussemaBenAmeur/lesson.git
 ```
 
-Then in Claude Code:
+Then inside Claude Code:
 
-```
+```text
 /plugin marketplace add /absolute/path/to/lesson
 /plugin install lesson
 ```
 
-### Verify install
+## Quick Start
 
-Start a new Claude Code session and type `/lesson` — you should see the command autocomplete. If it doesn't, the plugin didn't load; check `claude --debug` output.
+### 1. Start tracking
 
----
-
-## Usage
-
-### Starting a session
-
-```
-/lesson <free-form description of what you're trying to do>
+```text
+/lesson python asyncio task never awaited explain from scratch
 ```
 
-The description is optional but helps Claude focus the final analysis. Good descriptions name the problem, the tool, and the context: `/lesson react useEffect infinite loop when depending on an object`.
+The argument is optional, but useful. It becomes part of the session metadata and guides how the final lesson is written.
 
-Once you run `/lesson`, the PostToolUse hook is live. Every tool call — every `Read`, `Edit`, `Bash`, `Grep`, etc. — gets logged to an append-only file. You will not see anything; it runs silently.
+Examples:
 
-### Working
-
-Just work. Solve the problem, or try to. Hit errors. Revert bad changes. Run tests. The hook captures everything it can see without polluting your context: tool name, a truncated view of the arguments, a truncated view of the result, and an error flag.
-
-Every `LESSON_COMPRESS_EVERY` events (default 25), the plugin spawns a compression subagent that rolls the raw log into a running narrative summary. This keeps the main conversation context lean — you don't pay a huge token cost at the end.
-
-### Finishing
-
+```text
+/lesson linux driver mismatch explain from first principles
+/lesson react stale closure I know hooks basics, focus on the bug pattern
+/lesson
 ```
+
+### 2. Work normally
+
+Read files. Edit code. Run Bash commands. Fail. Recover. Try again.
+
+The hook logs tool events into `.claude/lessons/sessions/<slug>/arc.jsonl`. Every `LESSON_COMPRESS_EVERY` events, the plugin asks Claude to run the compression subagent so the raw trace gets folded into a structured `session_graph.json`.
+
+### 3. Generate the lesson
+
+```text
 /lesson-done
 ```
 
-Claude reads the full session state, runs analysis to pick the one fundamental concept, uses `WebSearch` + `WebFetch` to pull authoritative sources on that concept, and writes the lesson.
+This writes the final markdown lesson to `.claude/lessons/output/<slug>.md` and records `<slug>` in `.claude/lessons/last-session`.
 
-If Claude can't find good sources, it tells you instead of writing a degraded lesson. Grounding is the whole point.
+If optional PDF tooling is available, the repo also tries to render `.claude/lessons/output/<slug>.pdf`.
 
-### Aborting without a lesson
+### 4. Refine or explore
 
-```bash
-rm .claude/lessons/active-session
+```text
+/regenerate make the foundations deeper and the quiz harder
+/lesson-index
+/lesson-map --last 10
 ```
 
-The hook goes back to being a no-op for this project.
+## Command Reference
 
----
+| Command | Purpose |
+| --- | --- |
+| `/lesson [notes]` | Start a tracked learning session in the current project |
+| `/lesson-done` | Generate the lesson from the active session |
+| `/regenerate [notes]` | Rebuild the most recent lesson with new instructions |
+| `/lesson resume` | Resume tracking on the most recent session |
+| `/lesson-index` | Build `output/index.html` listing generated lessons |
+| `/lesson-map [flags]` | Build `output/map.html` connecting lessons by concepts |
 
-## How it works
+Supported `/lesson-map` filters:
 
-```
-user types /lesson
-  └─> commands/lesson.md       — Claude creates session dir, writes active-session marker
-       │
-       ▼  (user works normally)
-  PostToolUse fires on every tool call
-  └─> hooks/post_tool_use.py   — appends one truncated event to arc.jsonl
-                                  bumps counter; at threshold, emits a
-                                  system reminder asking Claude to compress
-       │
-       ▼
-  Claude spawns Task subagent of type `lesson-compress`
-  └─> agents/lesson-compress.md — reads arc.jsonl, merges into summary.md,
-                                   archives consumed events, truncates arc.jsonl
-       │
-       ▼  (eventually)
-  user types /lesson-done OR Stop hook fires
-  └─> commands/lesson-done.md   — Claude loads summary + arc, analyzes,
-                                   searches the web, fills templates/lesson.md.tmpl,
-                                   writes output/<slug>.md, removes marker
-```
+- `--last N`
+- `--since YYYY-MM-DD`
+- `--slugs slug1,slug2,...`
+- `--tag keyword`
 
-Two design rules this plugin is opinionated about:
+## What The Plugin Writes
 
-1. **Hooks are dumb.** The PostToolUse hook is a 150-line Python script with no LLM calls. It appends, truncates, and signals. All summarization happens via a Claude subagent, because summarization is a reasoning task and reasoning tasks belong in Claude.
-2. **Main context never sees the raw log.** Compression is done by a subagent that reads `arc.jsonl` and returns only a one-line "done" status. The main conversation only ever sees the compressed `summary.md` — and only when `/lesson-done` runs.
+All runtime state lives in the target project's `.claude/lessons/` directory, not in the plugin directory.
 
-### File layout
-
-Plugin (what this repo ships):
-
-```
-lesson-plugin/
-├── .claude-plugin/plugin.json     # manifest
-├── hooks/
-│   ├── hooks.json                 # PostToolUse + Stop registration
-│   ├── post_tool_use.py           # event logger + compression trigger
-│   └── stop.py                    # session-end nudge
-├── commands/
-│   ├── lesson.md                  # /lesson command
-│   └── lesson-done.md             # /lesson-done command
-├── agents/
-│   └── lesson-compress.md         # compression subagent
-├── templates/
-│   └── lesson.md.tmpl             # markdown scaffold with mermaid blocks
-├── LICENSE
-└── README.md
-```
-
-Per-project runtime state (created in your project's `.claude/lessons/`):
-
-```
+```text
 .claude/lessons/
-├── active-session                 # marker file — presence = hook is tracking
+├── active-session
+├── last-session
 ├── sessions/<slug>/
-│   ├── meta.json                  # goal, start time, cwd
-│   ├── arc.jsonl                  # raw events since last compression
-│   ├── summary.md                 # rolling compressed summary
-│   ├── counter                    # events since last compression
-│   └── arc.jsonl.archive.<N>      # consumed raw events
+│   ├── meta.json
+│   ├── arc.jsonl
+│   ├── summary.md              # compatibility / fallback file
+│   ├── session_graph.json      # created after compression
+│   ├── counter
+│   └── arc.jsonl.archive.<N>
 └── output/
-    └── <slug>.md                  # your finished lessons
+    ├── <slug>.md
+    ├── <slug>.pdf              # optional
+    ├── index.html
+    └── map.html
 ```
 
-### Recommended `.gitignore` entries
+Key files:
+
+- `meta.json`: session goal, notes, timestamps, working directory
+- `arc.jsonl`: compact raw event log since the last compression cycle
+- `session_graph.json`: the structured view of the session used by generation
+- `output/<slug>.md`: the canonical lesson artifact
+- `output/<slug>.pdf`: optional rendered export, generated on a best-effort basis
+
+Recommended `.gitignore` entries:
 
 ```gitignore
 .claude/lessons/active-session
 .claude/lessons/sessions/
 ```
 
-Keep `.claude/lessons/output/` versioned if you want the lessons themselves to live with the repo. Skip it if you consider them private notes.
+Version `output/` if you want the lessons to live with the repo. Ignore it if they are personal notes.
 
----
+## What A Lesson Contains
+
+The markdown template in [templates/lesson.md.tmpl](templates/lesson.md.tmpl) produces:
+
+- YAML frontmatter with slug, concept, date, goal, root cause, and tags
+- a session narrative grounded in the real failure
+- a foundations section that builds the missing concept from lower-level prerequisites
+- a concept explanation with citations when research is needed
+- a Mermaid concept diagram
+- a Mermaid debug-path diagram based on the actual session arc
+- a fix explanation and concrete fix snippet
+- a quiz that checks understanding, not just recall
+- an optional resources section
+
+## How It Works
+
+The architecture follows three rules:
+
+1. Hooks stay dumb.
+2. The main Claude conversation stays lean.
+3. The lesson should be grounded or it should not be written.
+
+### Flow
+
+```text
+/lesson
+  -> commands/lesson.md
+  -> writes session files + active-session marker
+
+normal Claude Code work
+  -> hooks/post_tool_use.py logs compact events to arc.jsonl
+  -> every N events, Claude is nudged to run the compression subagent
+
+compression cycle
+  -> agents/lesson-compress.md reads arc.jsonl
+  -> extends session_graph.json
+  -> archives consumed events
+
+/lesson-done
+  -> commands/lesson-done.md reads graph + tail events
+  -> decides whether web grounding is needed
+  -> fills templates/lesson.md.tmpl
+  -> writes output/<slug>.md
+  -> scripts/render_pdf.py tries to create output/<slug>.pdf
+```
+
+### Repo Components
+
+- [hooks/post_tool_use.py](hooks/post_tool_use.py): append-only event logger and compression trigger
+- [hooks/stop.py](hooks/stop.py): session-end nudge so active tracked sessions are not silently abandoned
+- [agents/lesson-compress.md](agents/lesson-compress.md): graph compression instructions
+- [commands/lesson.md](commands/lesson.md): session initialization
+- [commands/lesson-done.md](commands/lesson-done.md): final lesson generation
+- [commands/regenerate.md](commands/regenerate.md): regeneration flow
+- [commands/lesson-index.md](commands/lesson-index.md): lesson listing page generation
+- [commands/lesson-map.md](commands/lesson-map.md): cross-lesson concept map generation
+- [scripts/render_pdf.py](scripts/render_pdf.py): Mermaid-to-PDF pipeline
+- [docs/architecture.md](docs/architecture.md): design notes and system rationale
 
 ## Configuration
 
-All settings are optional environment variables:
+All settings are optional environment variables.
 
-| Variable | Default | What it does |
-|---|---|---|
-| `LESSON_COMPRESS_EVERY` | `25` | Events between compression subagent runs. Lower = more subagent invocations, cleaner context. Higher = fewer invocations, larger intermediate logs. |
-| `LESSON_STOP_MIN_EVENTS` | `5` | Minimum total events for the Stop hook to nudge `/lesson-done`. Below this, the hook stays silent (avoids half-baked lessons from interrupted sessions). |
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `LESSON_COMPRESS_EVERY` | `25` | Number of tracked events between compression runs |
+| `LESSON_STOP_MIN_EVENTS` | `5` | Minimum tracked events before the Stop hook blocks exit and nudges `/lesson-done` |
 
-Set them in your shell, or under `env` in `.claude/settings.json`:
+Example `.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "LESSON_COMPRESS_EVERY": "15"
+    "LESSON_COMPRESS_EVERY": "15",
+    "LESSON_STOP_MIN_EVENTS": "8"
   }
 }
 ```
 
----
+## PDF Export
 
-## FAQ
+Markdown is the canonical output. PDF generation is optional and never blocks lesson creation.
 
-**Does this send my code to random services?**
-No. The only external calls are `WebSearch` and `WebFetch`, and only during `/lesson-done`. They search for the *concept*, not your code. Your code is used locally to ground the lesson.
+The renderer in [scripts/render_pdf.py](scripts/render_pdf.py) does this:
 
-**Does it slow down my tool calls?**
-No. The PostToolUse hook is a short Python script that exits in milliseconds. It's a no-op in any project that isn't actively tracking a `/lesson` session.
+1. Extract Mermaid blocks from the lesson markdown
+2. Render diagrams to SVG through `npx @mermaid-js/mermaid-cli` when available
+3. Convert processed markdown to PDF via `pandoc`, or fall back to Chromium headless
 
-**Can I run multiple lesson sessions in parallel?**
-Not in the same project — the `active-session` marker is a single file. Different projects are fine.
+If the required tools are missing, the plugin still succeeds and keeps the markdown lesson.
 
-**What if `/lesson-done` fails partway through?**
-It won't leave a half-written lesson file. It reports the failure and leaves `active-session` in place so you can retry.
+## Privacy And Trust Model
 
-**How do I edit the lesson template?**
-Edit `templates/lesson.md.tmpl` in the plugin directory. It's a plain markdown file with `{{PLACEHOLDER}}` tokens that `/lesson-done` fills.
+Within this plugin, the tracking and archive flow are local-file operations.
 
-**Will this work offline?**
-`/lesson` and the tracking hooks work offline. `/lesson-done` requires network access for the web research step.
+- Hooks only read stdin, inspect the current project, and write under `.claude/lessons/`
+- The tracking hook is a no-op unless `.claude/lessons/active-session` exists
+- The generation flow may use `WebSearch` and `WebFetch` during `/lesson-done` when the concept needs authoritative grounding
+- The lesson is supposed to stop rather than bluff when grounding is necessary but unavailable
 
----
+This repository is optimized for transparency: the prompts, templates, hook code, and renderer are all plain text and easy to audit.
+
+## Current Scope
+
+`lesson` is already useful as a serious Claude Code learning plugin, but it is intentionally focused.
+
+Today it is optimized for:
+
+- debugging and problem-solving sessions in Claude Code
+- one active tracked session per project
+- markdown-first lesson artifacts
+- technical concepts that benefit from tracing a real failure path
+
+It is not yet a general-purpose LMS, cross-editor platform, or community lesson network. The README only documents behavior that exists in this repository today.
 
 ## Troubleshooting
 
-**`/lesson` command not found after install.** The plugin loads at session start. Restart Claude Code. If still not found, run `claude --debug` and look for plugin load errors.
+**`/lesson` is not available after install**
 
-**Hook errors in the status line.** The hooks are designed to exit 0 on any exception so they can never block your real tool calls. If you're seeing errors, run the smoke test below to isolate.
+Restart Claude Code. Plugin commands and hooks are registered at session start.
 
-**`/lesson-done` says there's no active session.** The `.claude/lessons/active-session` file is missing. Either you never ran `/lesson`, or it was deleted. Start a new session with `/lesson`.
+**`/lesson-done` says there is no active session**
 
-**Stop hook keeps nudging me and I just want to stop.**
-Delete the marker: `rm .claude/lessons/active-session`.
+You do not have `.claude/lessons/active-session` in the current project, or it was deleted. Start a new session with `/lesson`.
 
-### Smoke-testing the hooks without Claude
+**The Stop hook keeps nudging me**
 
-```bash
-cd /tmp && rm -rf lesson-test && mkdir lesson-test && cd lesson-test
+Delete `.claude/lessons/active-session` if you explicitly want to abandon the session without generating a lesson.
 
-# 1. Hook is a no-op when no session is active.
-echo '{"cwd":"/tmp/lesson-test","tool_name":"Read","tool_input":{},"tool_response":{}}' \
-  | python3 ~/.claude/plugins/lesson/hooks/post_tool_use.py
-echo "expect exit 0: $?"
+**PDF export does not appear**
 
-# 2. Simulate an active session and feed an event.
-mkdir -p .claude/lessons/sessions/test
-printf test > .claude/lessons/active-session
-printf 0 > .claude/lessons/sessions/test/counter
-: > .claude/lessons/sessions/test/arc.jsonl
-
-echo '{"cwd":"/tmp/lesson-test","tool_name":"Bash","tool_input":{"command":"ls"},"tool_response":{"content":"a\nb"}}' \
-  | python3 ~/.claude/plugins/lesson/hooks/post_tool_use.py
-
-cat .claude/lessons/sessions/test/arc.jsonl
-# → one JSON line with tool=Bash, is_error=false
-```
-
----
+The markdown lesson is still valid. Install the optional Mermaid and PDF tooling if you want rendered PDFs.
 
 ## Contributing
 
-Issues and PRs welcome. The plugin is intentionally small — prefer edits over additions.
+Issues and PRs are welcome.
 
-Design principles to preserve:
+Design constraints worth preserving:
 
-- Hooks stay LLM-free and never block
-- Compression is always a subagent, never the main conversation
-- Lessons are grounded in real session data or they don't get written
-- No half-baked fallbacks: fail loudly rather than degrade quietly
+- hooks must stay fast and LLM-free
+- the main Claude conversation should not read raw session logs directly
+- graph compression should stay explicit and inspectable
+- lessons should stay grounded in real session data
+- graceful degradation is better than hidden failure
+
+For a deeper technical overview, start with [docs/architecture.md](docs/architecture.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE)
