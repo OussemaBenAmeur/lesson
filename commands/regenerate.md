@@ -50,11 +50,16 @@ Follow the exact same generation flow as `/lesson-done` Steps 2–5 (Analyze, De
 - Apply any specific changes the user asked for in `$ARGUMENTS`
 - For web research: re-run it only if the original lesson included sources OR if the user's notes ask for it. If the original lesson had no sources and the user didn't ask for them, skip web research.
 
-## Step 5 — Write output
+## Step 5 — Write output and generate PDF
 
 1. Write the regenerated markdown to `.claude/lessons/output/<slug>.md` (overwriting the existing file). YAML frontmatter `---` block must be the absolute first content.
-2. Do NOT modify `last-session` or `active-session`.
-3. Print to the user:
+2. Generate PDF by running via Bash:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/render_pdf.py .claude/lessons/output/<slug>.md
+   ```
+   Print whatever the script outputs. Skip silently if the env var is unset or script fails.
+3. Do NOT modify `last-session` or `active-session`.
+4. Print to the user:
    ```
    ✓ /lesson regenerated
      concept: <concept name>

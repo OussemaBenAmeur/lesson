@@ -2,20 +2,16 @@
 """PostToolUse hook for the /lesson plugin.
 
 Reads a Claude Code hook event from stdin. If the project under the event's
-cwd has an active lesson session (marker file present), append one compressed
-event line to arc.jsonl, bump the counter, and — at threshold — emit an
-additionalContext reminder telling Claude to spawn the lesson-compress subagent.
-
-Each event is tagged with `significant: true/false` using cheap Python heuristics
-so the compression subagent can prioritise which events to promote to graph nodes
-without re-reading everything.
+cwd has an active lesson session (marker file present):
+  - Appends one compressed event line to arc.jsonl (with significance flag)
+  - Updates meta.json token_tracking.arc_input_chars (running total)
+  - Bumps the compression counter
+  - At threshold: emits an additionalContext reminder to spawn lesson-compress
 
 Design notes:
-- This hook is always installed (via the plugin manifest) but is a cheap
-  no-op in any project that does not have .claude/lessons/active-session.
-- The hook does NOT summarize or call any LLM. It only appends, counts, and signals.
-- The hook must never crash: any exception should exit 0 silently so it
-  cannot block the user's real tool calls.
+- Always installed but a no-op in projects without .claude/lessons/active-session.
+- Never calls any LLM. Appends, counts, and signals only.
+- Must never crash: any exception exits 0 silently to never block tool calls.
 """
 
 from __future__ import annotations
@@ -34,25 +30,11 @@ RESULT_CAP = 1000
 # Tools whose invocation is always worth noting in the graph (user changed something).
 _SIGNIFICANT_TOOLS = {"Edit", "Write", "NotebookEdit"}
 
-# Substrings that, when present in a Bash result, indicate an error or important discovery.
+# Substrings in Bash results that indicate an error or important discovery.
 _SIGNIFICANT_BASH_PATTERNS = [
-    "error",
-    "failed",
-    "not found",
-    "no such file",
-    "permission denied",
-    "mismatch",
-    "cannot",
-    "unable to",
-    "exception",
-    "traceback",
-    "fatal",
-    "warning:",
-    "refused",
-    "denied",
-    "unrecognized",
-    "invalid",
-    "undefined",
+    "error", "failed", "not found", "no such file", "permission denied",
+    "mismatch", "cannot", "unable to", "exception", "traceback", "fatal",
+    "warning:", "refused", "denied", "unrecognized", "invalid", "undefined",
     "missing",
 ]
 
@@ -64,10 +46,10 @@ def _has_version_string(text: str) -> bool:
 
 
 def _is_significant(tool_name: str, result_text: str, is_error: bool) -> bool:
-    """Return True if this event is likely worth promoting to a graph node.
+    """Cheap heuristic: is this event likely worth a graph node?
 
-    Heuristics only — no LLM. The compression subagent makes the final call;
-    this flag is a prioritisation hint, not a hard filter.
+    This is a prioritisation hint for the compression subagent, not a hard filter.
+    The subagent makes the final call on what becomes a node.
     """
     if is_error:
         return True
@@ -77,8 +59,7 @@ def _is_significant(tool_name: str, result_text: str, is_error: bool) -> bool:
         lower = result_text.lower()
         if any(p in lower for p in _SIGNIFICANT_BASH_PATTERNS):
             return True
-        # Short output containing version strings suggests a version comparison
-        # or state-check — common pivotal moments in debugging sessions.
+        # Short output with version strings → likely a comparison or state check
         if len(result_text) < 500 and _has_version_string(result_text):
             return True
     return False
@@ -121,6 +102,19 @@ def _extract_result(tool_response) -> tuple[str, bool]:
     return _safe_str(tool_response), False
 
 
+def _update_token_tracking(meta_path: Path, chars_added: int) -> None:
+    """Increment arc_input_chars in meta.json. Silently skips on any error."""
+    try:
+        if not meta_path.exists():
+            return
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        tt = meta.setdefault("token_tracking", {})
+        tt["arc_input_chars"] = tt.get("arc_input_chars", 0) + chars_added
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+    except Exception:
+        pass
+
+
 def main() -> int:
     try:
         raw = sys.stdin.read()
@@ -149,6 +143,7 @@ def main() -> int:
 
     arc_log = session_dir / "arc.jsonl"
     counter_file = session_dir / "counter"
+    meta_path = session_dir / "meta.json"
 
     tool_name = event.get("tool_name") or "unknown"
     tool_input = event.get("tool_input") or {}
@@ -169,16 +164,22 @@ def main() -> int:
         "significant": significant,
     }
 
+    entry_json = json.dumps(entry, ensure_ascii=False)
+
     try:
         with arc_log.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            fh.write(entry_json + "\n")
     except Exception:
         return 0
 
+    # Track chars logged for token estimation (chars / 4 ≈ tokens)
+    _update_token_tracking(meta_path, len(entry_json) + 1)
+
+    # Bump compression counter
     count = 0
     if counter_file.exists():
         try:
-            count = int((counter_file.read_text().strip() or "0"))
+            count = int(counter_file.read_text().strip() or "0")
         except Exception:
             count = 0
     count += 1
@@ -199,7 +200,8 @@ def main() -> int:
             f"subagent of type 'lesson-compress' with this prompt:\n\n"
             f"    Compress the /lesson arc log at {session_dir}. Read arc.jsonl and "
             f"extend session_graph.json with new nodes and edges derived from the events. "
-            f"Prioritise events where significant=true. Archive arc.jsonl to "
+            f"Prioritise events where significant=true. Update meta.json token_tracking "
+            f"with compression_cycles and graph_output_chars. Archive arc.jsonl to "
             f"arc.jsonl.archive.N and reset it. Follow the lesson-compress skill "
             f"instructions exactly. Report one line when done.\n\n"
             f"This keeps the main context lean. Do not read arc.jsonl yourself."
