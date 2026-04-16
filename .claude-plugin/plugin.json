@@ -1,0 +1,19 @@
+{
+  "name": "lesson",
+  "version": "0.1.0",
+  "description": "Turn a Claude Code debugging session into a textbook-quality lesson. Instruments the session via PostToolUse hooks, tracks the problem-solving arc, researches the underlying concept on the web, and emits a grounded markdown lesson with real code, diagrams, and a closing exercise.",
+  "author": {
+    "name": "Oussema Ben Ameur"
+  },
+  "homepage": "https://github.com/oussemabenameur/lesson-plugin",
+  "repository": "https://github.com/oussemabenameur/lesson-plugin",
+  "license": "MIT",
+  "keywords": [
+    "learning",
+    "education",
+    "lesson",
+    "debugging",
+    "claude-code",
+    "plugin"
+  ]
+}
