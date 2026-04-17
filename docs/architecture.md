@@ -19,7 +19,27 @@ The philosophy has three rules:
 ### Plugin (this repo)
 
 ```
-lesson/
+lesson/                         ← Python package (pip install lesson)
+├── lesson/
+│   ├── cli.py                  — Typer CLI: start / compress / stats / graph / resume / done
+│   ├── session.py              — SessionManager: create, resume, close, arc/graph path helpers
+│   ├── graph/
+│   │   ├── schema.py           — Pydantic models: SessionGraph, Node, Edge, RawEvent (v2)
+│   │   ├── builder.py          — EventGraphBuilder: deterministic compression pipeline
+│   │   ├── algorithms.py       — NetworkX: betweenness centrality, causal chain, community detection
+│   │   └── visualize.py        — to_mermaid(), to_dot(), to_plotly_html()
+│   ├── nlp/
+│   │   ├── scorer.py           — SignificanceScorer: TF-IDF + error + edit composite float score
+│   │   ├── extractor.py        — NLPExtractor: error codes, file paths, packages
+│   │   └── embedder.py         — NodeEmbedder: semantic dedup (sentence-transformers, optional)
+│   └── render/
+│       ├── markdown.py         — markdown rendering helpers
+│       └── pdf.py              — pdf rendering
+├── eval/
+│   ├── metrics.py              — GraphQualityReport: node F1, edge accuracy, compression ratio
+│   └── benchmark.py            — compare algorithmic vs LLM compression baseline
+├── tests/                      — unit + integration (pytest)
+├── pyproject.toml              — build config, deps, entry point: lesson = lesson.cli:app
 ├── commands/
 │   ├── lesson.md           — /lesson command (start tracking)
 │   ├── lesson-done.md      — /lesson-done command (generate lesson)
@@ -129,15 +149,45 @@ user types /lesson-done
 
 ---
 
+## The Compression Pipeline
+
+There are two compression paths. Both produce the same `session_graph.json` format.
+
+### Path A — LLM Subagent (Claude Code)
+
+The `agents/lesson-compress.md` subagent reads `arc.jsonl`, uses Claude's judgment to promote events to nodes and wire edges, then archives consumed events. Accurate, context-aware, costs tokens.
+
+### Path B — Algorithmic (`lesson compress` CLI)
+
+`EventGraphBuilder` in `lesson/graph/builder.py` runs a deterministic, ~50ms, zero-token pipeline:
+
+```
+arc.jsonl events
+  └─> SignificanceScorer.fit_score()      # TF-IDF novelty × error signal × edit signal × version signal
+        → float score per event, sorted desc
+  └─> candidates (score ≥ 0.25, max 12 per batch)
+  └─> _classify(event) → NodeType        # is_error→observation, Edit→attempt, Bash+error→observation, etc.
+  └─> _make_label(event)                 # verbatim first error line, or entity extraction
+  └─> NodeEmbedder.find_duplicate()      # semantic dedup via sentence-transformers (optional)
+  └─> Node added to graph
+  └─> _wire_edge(prev, curr)             # infer EdgeType from (prev.type, curr.type, is_error)
+  └─> _make_resolution()                 # detect: no-error attempt after prior errors
+  └─> find_root_cause()                  # betweenness centrality on concept nodes
+```
+
+Use Path B standalone or as a supplement to Path A. The `lesson done` CLI command runs Path B as a final pass before instructing the user to run `/lesson-done` for narrative generation.
+
+---
+
 ## The Session Knowledge Graph
 
-Stored in `session_graph.json`. Built incrementally by the compression subagent. This is the primary input to `/lesson-done` — it avoids re-analyzing hundreds of raw events.
+Stored in `session_graph.json`. Built incrementally by the compression pipeline. This is the primary input to `/lesson-done` — it avoids re-analyzing hundreds of raw events.
 
-### Schema
+### Schema (v2)
 
 ```json
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "slug": "20260416-010610",
   "goal": "get nvidia-smi working on kernel 6.17.8",
   "total_events_compressed": 47,
@@ -160,6 +210,8 @@ Stored in `session_graph.json`. Built incrementally by the compression subagent.
 | `resolution` | an approach that worked | — |
 
 Node IDs use type-initial + integer: `g1`, `o1`, `h1`, `a1`, `c1`, `r1`. IDs are stable — never renumbered across compression cycles.
+
+**v2 schema change:** `flags` is a `dict[str, Any]` (e.g. `{"root_cause": true}`) rather than individual top-level booleans. The Pydantic models in `lesson/graph/schema.py` are the source of truth. The compression subagent (`agents/lesson-compress.md`) should be updated to emit v2 format.
 
 ### Edge types
 
@@ -341,6 +393,35 @@ python3 scripts/install.py --platform gemini        # appends to GEMINI.md + set
 
 ---
 
+## CLI Reference (`lesson` command)
+
+Install: `pip install -e .` (dev) or `pip install lesson`. Entry point: `lesson`.
+
+| Command | What it does |
+|---|---|
+| `lesson start "goal"` | Create a new session in the current project |
+| `lesson compress` | Run algorithmic compression on `arc.jsonl` → `session_graph.json` |
+| `lesson stats` | Print graph metrics (nodes, edges, orphans, root_cause_id, token chars) |
+| `lesson graph` | Write interactive Plotly HTML graph; `--mermaid` / `--dot` for text output |
+| `lesson resume [slug]` | Re-activate last or named session |
+| `lesson done` | Final compression pass + prints instructions to run `/lesson-done` in AI |
+
+Optional deps for semantic deduplication: `pip install lesson[nlp]` (spacy + sentence-transformers).
+
+## Eval Framework
+
+`eval/` provides quality measurement for the algorithmic compression pipeline.
+
+**`eval/metrics.py`** — `GraphQualityReport`:
+- `node_precision`, `node_recall`, `node_f1` — fuzzy label matching against a gold graph
+- `edge_accuracy` — fraction of gold edge types present in predicted graph
+- `compression_ratio` — nodes created per event (lower = more aggressive)
+- `graph_quality_score` — weighted composite: 0.5×F1 + 0.25×edge_acc + 0.1×has_root_cause + 0.1×has_resolution − orphan_penalty
+
+**`eval/benchmark.py`** — compare algorithmic compression against LLM baseline using fixture arc.jsonl files in `tests/fixtures/`.
+
+---
+
 ## Configuration
 
 All settings are optional environment variables. Set in shell or under `env` in `.claude/settings.json`.
@@ -369,6 +450,9 @@ Misconceptions are personal and project-agnostic. The same async misconception c
 
 **Why estimate tokens rather than count them exactly?**
 Claude Code does not expose API token counts to hooks or command prompts. Character ÷ 4 is a standard, widely-accepted approximation (±20%) that requires no external calls. The tracking is useful for order-of-magnitude awareness, not billing precision.
+
+**Why a Python package for compression instead of always using the LLM subagent?**
+The LLM subagent is accurate but costs tokens and adds latency. The algorithmic `EventGraphBuilder` runs in ~50ms with zero tokens: TF-IDF captures novelty, error patterns capture importance, and betweenness centrality finds the root cause without any natural language understanding. The two paths are complementary — Path A (LLM) produces richer hypothesis and misconception nodes; Path B (algorithmic) is faster and usable outside AI assistants. The eval framework in `eval/` measures the gap between them.
 
 **Why one skill file per platform rather than a single universal file?**
 Platform constraints differ enough that a single file would be riddled with conditionals. Each platform gets a clean, self-contained file that describes exactly how `/lesson` works on that platform — no irrelevant sections, no branching prose. The core lesson format (session graph schema, template, learner profile) stays identical across all skill files.

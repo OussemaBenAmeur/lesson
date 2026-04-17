@@ -76,8 +76,9 @@ On platforms with hooks (Claude Code, Gemini), event logging is automatic. On al
 ## What Ships Today
 
 - Session tracking via hooks (Claude Code, Gemini) or manual LLM logging (all other platforms)
+- **Two compression paths** — LLM subagent (accurate, context-aware) or `lesson compress` CLI (deterministic, ~50ms, zero tokens)
 - Session knowledge graph (`session_graph.json`) — structured causal record of the session
-- Cross-session learner profile at `~/.claude/lessons/profile.json` — tracks recurring misconceptions and learned concepts across all projects and platforms
+- Cross-session learner profile at `~/.claude/lessons/profile.json` — tracks recurring misconceptions and concepts across all projects and platforms
 - "You've hit this before" callout when the same misconception recurs
 - Per-session token tracking with cost estimates
 - Canonical markdown lesson output with YAML frontmatter
@@ -87,6 +88,8 @@ On platforms with hooks (Claude Code, Gemini), event logging is automatic. On al
 - `/lesson-profile` to display your learning history and token usage
 - `/lesson-index` to build a browsable lesson list
 - `/lesson-map` to build a concept map across generated lessons
+- **`lesson` CLI** — use the compression and graph tooling standalone, outside of any AI assistant
+- **Eval framework** — measure compression quality (node F1, edge accuracy, graph quality score)
 
 ---
 
@@ -101,6 +104,17 @@ On platforms with hooks (Claude Code, Gemini), event logging is automatic. On al
   - `pandoc` plus `weasyprint`, `wkhtmltopdf`, `xelatex`, or `pdflatex`
   - or a Chromium-based browser for the fallback renderer
 
+### Python Package
+
+```bash
+git clone https://github.com/OussemaBenAmeur/lesson.git
+cd lesson
+
+pip install -e .              # core (networkx, pydantic, typer, rich, plotly)
+pip install -e ".[nlp]"       # + semantic deduplication (spacy, sentence-transformers)
+pip install -e ".[dev]"       # + pytest, hypothesis
+```
+
 ### Claude Code — From GitHub Marketplace
 
 Inside Claude Code:
@@ -113,9 +127,6 @@ Inside Claude Code:
 ### All Platforms — Install Script
 
 ```bash
-git clone https://github.com/OussemaBenAmeur/lesson.git
-cd lesson
-
 # List supported platforms
 python3 scripts/install.py --list
 
@@ -151,7 +162,7 @@ The argument is optional but guides how the final lesson is written.
 
 Read files. Edit code. Run commands. Fail. Recover. Try again.
 
-On Claude Code, the hook logs tool events into `arc.jsonl` automatically. Every `LESSON_COMPRESS_EVERY` events, the plugin asks the AI to run the compression subagent, folding the raw trace into a structured `session_graph.json`. On other platforms, the AI logs events itself.
+On Claude Code, the hook logs tool events into `arc.jsonl` automatically. On other platforms, the AI logs events itself. Either way, the raw trace gets folded into `session_graph.json` — by the LLM subagent on Claude Code, or by the `lesson compress` CLI at any time.
 
 ### 3. Generate the lesson
 
@@ -185,6 +196,37 @@ Writes the final markdown lesson to `.claude/lessons/output/<slug>.md` and (if P
 | `/lesson-map [flags]` | Build `output/map.html` connecting lessons by concepts |
 
 Supported `/lesson-map` filters: `--last N`, `--since YYYY-MM-DD`, `--slugs slug1,slug2,...`, `--tag keyword`
+
+---
+
+## CLI (`lesson` command)
+
+The Python package ships a standalone CLI that works outside of any AI assistant. Useful for triggering compression from CI, inspecting graphs, or integrating with other tools.
+
+```bash
+lesson start "fix asyncio blocking issue"   # create a new session
+lesson compress                              # fold arc.jsonl into session_graph.json (~50ms, zero tokens)
+lesson stats                                 # print graph metrics
+lesson graph                                 # open interactive Plotly graph in browser
+lesson graph --mermaid                       # print Mermaid syntax
+lesson graph --dot                           # print DOT syntax
+lesson resume                                # re-activate the last session
+lesson done                                  # final compression + instructions for /lesson-done
+```
+
+The `lesson compress` command runs `EventGraphBuilder` — a deterministic pipeline:
+
+```
+arc.jsonl events
+  → SignificanceScorer  (TF-IDF novelty × error signal × edit signal × version signal → float)
+  → top candidates (score ≥ 0.25, max 12 per batch)
+  → _classify() → NodeType
+  → NodeEmbedder deduplication (optional, requires lesson[nlp])
+  → edge inference from (prev.type, curr.type, is_error)
+  → betweenness centrality → root_cause_id
+```
+
+This complements the LLM subagent on Claude Code and replaces it on all other platforms.
 
 ---
 
@@ -343,7 +385,7 @@ Same flow, but the AI logs events to `arc.jsonl` manually after each significant
 | --- | --- |
 | `hooks/post_tool_use.py` | Append-only event logger and compression trigger |
 | `hooks/stop.py` | Session-end nudge |
-| `agents/lesson-compress.md` | Graph compression subagent instructions |
+| `agents/lesson-compress.md` | LLM compression subagent (Claude Code) |
 | `commands/lesson.md` | Session initialization |
 | `commands/lesson-done.md` | Final lesson generation |
 | `commands/regenerate.md` | Regeneration flow |
@@ -355,6 +397,9 @@ Same flow, but the AI logs events to `arc.jsonl` manually after each significant
 | `scripts/render_pdf.py` | Mermaid-to-PDF pipeline |
 | `scripts/install.py` | Multi-platform install dispatcher |
 | `skills/skill-<platform>.md` | Per-platform skill file |
+| `lesson/` | Python package — algorithmic compression, CLI, graph algorithms |
+| `eval/` | Compression quality metrics and benchmark |
+| `tests/` | Unit + integration tests (pytest) |
 | `docs/architecture.md` | Design notes and system rationale |
 
 ---
@@ -369,6 +414,8 @@ All settings are optional environment variables.
 | `LESSON_STOP_MIN_EVENTS` | `5` | Min events before Stop hook nudges `/lesson-done` |
 | `LESSON_MIN_EVENTS` | `8` | Min events before `/lesson-done` warns of thin session |
 | `CLAUDE_PLUGIN_ROOT` | (auto) | Path to plugin root, used in PDF generation |
+
+The `lesson compress` CLI also accepts `--threshold` (default `0.25`) and `--no-embed` flags.
 
 ---
 
