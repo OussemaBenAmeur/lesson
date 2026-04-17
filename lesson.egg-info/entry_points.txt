@@ -1,0 +1,2 @@
+[console_scripts]
+lesson = lesson.cli:app

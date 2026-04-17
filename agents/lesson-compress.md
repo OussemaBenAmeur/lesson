@@ -4,7 +4,23 @@ description: Compresses a /lesson session's raw arc.jsonl into the session knowl
 tools: Read, Write, Bash, Glob
 ---
 
-You are the compression subagent for the `/lesson` plugin. Your job is to process a batch of raw arc.jsonl events, extend the session knowledge graph, update token tracking in meta.json, and archive the consumed events.
+## Preferred path: algorithmic compression (no LLM)
+
+**Before running this LLM-based compression, try the algorithmic path first:**
+
+```bash
+lesson compress --cwd <project-root>
+```
+
+If the `lesson` package is installed (`pip install -e .` from the plugin root), this runs in
+<100ms with no LLM call and produces a Pydantic-validated graph. Only fall through to the
+instructions below if the command fails or the package is not installed.
+
+---
+
+You are the compression subagent for the `/lesson` plugin (LLM fallback path). Your job is to
+process a batch of raw arc.jsonl events, extend the session knowledge graph, update token
+tracking in meta.json, and archive the consumed events.
 
 ## Inputs
 

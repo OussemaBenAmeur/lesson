@@ -2,7 +2,9 @@
 
 ## Overview
 
-`/lesson` is a Claude Code plugin that turns real debugging and learning sessions into textbook-quality markdown lessons. The core insight is that a debugging session contains more pedagogical signal than any generic tutorial — the specific errors you hit, the wrong assumptions you made, and the turning points where you figured it out are exactly what a good lesson needs.
+`/lesson` is a multi-platform AI coding skill that turns real working sessions into textbook-quality markdown lessons. It works across 10 platforms: Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot CLI, OpenCode, OpenClaw, Factory Droid, Trae, and Google Antigravity.
+
+The core insight is that a working session contains more pedagogical signal than any generic tutorial — the specific errors you hit, the wrong assumptions you made, and the turning points where you figured it out are exactly what a good lesson needs.
 
 The philosophy has three rules:
 
@@ -29,14 +31,27 @@ lesson/
 ├── agents/
 │   └── lesson-compress.md  — compression subagent definition
 ├── hooks/
-│   ├── hooks.json          — PostToolUse + Stop hook registration
+│   ├── hooks.json          — PostToolUse + Stop hook registration (Claude Code)
 │   ├── post_tool_use.py    — event logger + compression trigger + token tracking
 │   └── stop.py             — session-end nudge
+├── skills/
+│   ├── skill-claude-code.md   — reference (natively supported via commands/)
+│   ├── skill-codex.md         — full workflow for Codex ($lesson prefix, manual logging)
+│   ├── skill-cursor.md        — .mdc format, alwaysApply: true, .cursor/lessons/ data root
+│   ├── skill-gemini.md        — optional BeforeTool hook, ~/.gemini/GEMINI.md
+│   ├── skill-copilot.md       — ~/.github/copilot-instructions.md
+│   ├── skill-opencode.md      — ~/.opencode/OPENCODE.md
+│   ├── skill-openclaw.md      — ~/.claw/CLAW.md
+│   ├── skill-droid.md         — ~/.droid/DROID.md
+│   ├── skill-trae.md          — ~/.trae/TRAE.md
+│   └── skill-antigravity.md   — <project>/.agent/lesson.md
 ├── templates/
 │   ├── lesson.md.tmpl      — markdown lesson template (canonical output)
 │   └── lesson.html.tmpl    — HTML viewer template (for /lesson-index, /lesson-map)
 ├── scripts/
-│   └── render_pdf.py       — converts lesson .md to PDF with rendered mermaid SVG
+│   ├── render_pdf.py       — converts lesson .md to PDF with rendered mermaid SVG
+│   └── install.py          — multi-platform install dispatcher (--list, --platform <name>)
+├── CLAUDE.md               — AI context file (auto-loaded by Claude Code and most platforms)
 └── docs/
     └── architecture.md     — this file
 ```
@@ -268,6 +283,64 @@ This flag is a hint to the compression subagent — events with `significant: tr
 
 ---
 
+## Multi-Platform Support
+
+The plugin uses a "Single Core, Platform Wrapper" pattern. The core lesson format, session graph schema, and learner profile are identical across all platforms. What varies per platform:
+
+| Dimension | Claude Code | Gemini CLI | All others |
+|---|---|---|---|
+| Event logging | PostToolUse hook (automatic) | BeforeTool hook (optional) | LLM logs manually to `arc.jsonl` |
+| Graph compression | Task subagent (automatic) | Inline or subagent | Inline at `/lesson-done` time |
+| Session data root | `.claude/lessons/` | `.claude/lessons/` | `.claude/lessons/` (`.cursor/lessons/` on Cursor) |
+| Command prefix | `/lesson` | `/lesson` | `/lesson` (Codex: `$lesson`) |
+| Install target | `~/.claude/hooks.json` | `~/.gemini/GEMINI.md` | Platform-specific (see below) |
+
+### Install Locations
+
+```
+Claude Code   — ~/.claude/hooks.json  (registers PostToolUse + Stop hooks)
+Codex         — ~/.codex/CODEX.md
+Cursor        — <project>/.cursor/rules/lesson.mdc
+Gemini CLI    — ~/.gemini/GEMINI.md  +  ~/.gemini/settings.json (BeforeTool hook)
+Copilot CLI   — ~/.github/copilot-instructions.md
+OpenCode      — ~/.opencode/OPENCODE.md
+OpenClaw      — ~/.claw/CLAW.md
+Factory Droid — ~/.droid/DROID.md
+Trae          — ~/.trae/TRAE.md
+Antigravity   — <project>/.agent/lesson.md
+```
+
+### Data Flow (platforms without hooks)
+
+On hook-less platforms, the AI performs the steps that the hook and compression subagent would normally handle automatically:
+
+```
+user types /lesson
+  └─> skill file instructions → AI creates session dir, writes active-session
+
+user works (tool calls fire)
+  └─> AI appends event to arc.jsonl manually after each significant tool call
+
+at 25 events (or at /lesson-done time)
+  └─> AI builds/extends session_graph.json inline
+      archives arc.jsonl → arc.jsonl.archive.N
+
+user types /lesson-done
+  └─> same generation flow as Claude Code (profile read, web research, template fill,
+      render_pdf.py, profile update, last-session write)
+```
+
+### Installing
+
+```bash
+python3 scripts/install.py --list                   # show all platforms + config paths
+python3 scripts/install.py --platform claude-code   # registers hooks
+python3 scripts/install.py --platform cursor        # writes to current project
+python3 scripts/install.py --platform gemini        # appends to GEMINI.md + settings.json
+```
+
+---
+
 ## Configuration
 
 All settings are optional environment variables. Set in shell or under `env` in `.claude/settings.json`.
@@ -296,3 +369,6 @@ Misconceptions are personal and project-agnostic. The same async misconception c
 
 **Why estimate tokens rather than count them exactly?**
 Claude Code does not expose API token counts to hooks or command prompts. Character ÷ 4 is a standard, widely-accepted approximation (±20%) that requires no external calls. The tracking is useful for order-of-magnitude awareness, not billing precision.
+
+**Why one skill file per platform rather than a single universal file?**
+Platform constraints differ enough that a single file would be riddled with conditionals. Each platform gets a clean, self-contained file that describes exactly how `/lesson` works on that platform — no irrelevant sections, no branching prose. The core lesson format (session graph schema, template, learner profile) stays identical across all skill files.
