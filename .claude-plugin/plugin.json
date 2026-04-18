@@ -1,6 +1,6 @@
 {
   "name": "lesson",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn any AI-assisted working session into a textbook-quality lesson. Tracks the problem-solving arc via hooks or manual logging, builds a session knowledge graph, and emits a grounded markdown+PDF lesson with diagrams, a quiz, and cross-session learner memory. Works on Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot CLI, OpenCode, OpenClaw, Factory Droid, Trae, and Google Antigravity.",
   "author": {
     "name": "Oussema Ben Ameur"

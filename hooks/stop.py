@@ -2,16 +2,16 @@
 """Stop hook for the /lesson plugin.
 
 Fires when Claude Code is about to stop. If the current project has an active
-lesson session with enough tracked events, blocks the stop and asks Claude to
-run /lesson-done first.
+lesson session with enough tracked events, emits a single-line passive nudge
+reminding the user to run /lesson-done. It never blocks the stop — users are in
+charge of their exit.
 
 Design notes:
 - Honors the `stop_hook_active` flag to avoid infinite loops.
 - Skips trivial sessions (< LESSON_STOP_MIN_EVENTS) so that interrupted or
   aborted sessions do not produce half-baked lessons.
-- The hook never writes state. It only reads the session directory and emits
-  a decision.
-- Any exception → exit 0 silently. Never block stop because of a bug here.
+- The hook never writes state and never blocks the stop.
+- Any exception → exit 0 silently. Never interfere because of a bug here.
 """
 
 from __future__ import annotations
@@ -74,18 +74,11 @@ def main() -> int:
     if total < MIN_EVENTS:
         return 0
 
-    reason = (
-        f"[/lesson] You have an active tracked learning session '{slug}' with "
-        f"{total} events. Before stopping, run the /lesson-done flow to generate "
-        f"the lesson markdown from this session (load commands/lesson-done.md "
-        f"instructions from the lesson plugin and follow them). If the user truly "
-        f"wants to stop without generating a lesson, they can delete "
-        f"{marker} and try again."
-    )
-
     output = {
-        "decision": "block",
-        "reason": reason,
+        "hookSpecificOutput": {
+            "hookEventName": "Stop",
+            "systemMessage": f"[/lesson] Session '{slug}' still active — run /lesson-done when ready.",
+        }
     }
     try:
         print(json.dumps(output))

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -31,6 +32,20 @@ from pathlib import Path
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = PLUGIN_ROOT / "skills"
 HOOKS_DIR = PLUGIN_ROOT / "hooks"
+SHARED_SKILL = SKILLS_DIR / "_shared.md"
+
+# Per-platform skill files carry a leading HTML-comment header with:
+#   platform: <name>
+#   data_root: .claude/lessons | .cursor/lessons
+#   cmd_prefix: / | $
+# Those values are substituted into _shared.md and concatenated below the
+# platform-specific intro. Keeping the workflow in one file prevents drift.
+_HEADER_RE = re.compile(r"<!--\s*(.*?)\s*-->", re.DOTALL)
+_DEFAULT_VARS = {
+    "platform": "unknown",
+    "data_root": ".claude/lessons",
+    "cmd_prefix": "/",
+}
 
 PLATFORMS = [
     "claude-code",
@@ -49,13 +64,50 @@ PLATFORMS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _parse_header(text: str) -> dict[str, str]:
+    """Extract `key: value` pairs from the first HTML comment in the skill file."""
+    vars_ = dict(_DEFAULT_VARS)
+    m = _HEADER_RE.search(text)
+    if not m:
+        return vars_
+    for line in m.group(1).splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            vars_[k.strip()] = v.strip()
+    return vars_
+
+
+def _render_shared(vars_: dict[str, str]) -> str:
+    """Load _shared.md and substitute {{DATA_ROOT}} / {{PLATFORM}} / {{CMD_PREFIX}}."""
+    if not SHARED_SKILL.exists():
+        return ""
+    body = SHARED_SKILL.read_text(encoding="utf-8")
+    # Drop the leading explanation comment block from _shared.md.
+    body = _HEADER_RE.sub("", body, count=1).lstrip()
+    replacements = {
+        "{{DATA_ROOT}}": vars_["data_root"],
+        "{{PLATFORM}}": vars_["platform"],
+        "{{CMD_PREFIX}}": vars_["cmd_prefix"],
+    }
+    for src, dst in replacements.items():
+        body = body.replace(src, dst)
+    return body
+
+
 def _read_skill(name: str) -> str:
-    """Read a skill file and replace <plugin_root> with the actual path."""
+    """Return the final skill text for a given platform.
+
+    Per-platform file provides the intro/header; _shared.md provides the
+    workflow. `<plugin_root>` and `{{…}}` placeholders are substituted.
+    """
     path = SKILLS_DIR / f"skill-{name}.md"
     if not path.exists():
         raise FileNotFoundError(f"Skill file not found: {path}")
-    text = path.read_text(encoding="utf-8")
-    return text.replace("<plugin_root>", str(PLUGIN_ROOT))
+    header_text = path.read_text(encoding="utf-8")
+    vars_ = _parse_header(header_text)
+    shared = _render_shared(vars_)
+    combined = header_text if not shared else f"{header_text.rstrip()}\n\n{shared}"
+    return combined.replace("<plugin_root>", str(PLUGIN_ROOT))
 
 
 def _append_to_file(dest: Path, content: str, marker: str = "# /lesson") -> None:

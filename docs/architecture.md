@@ -6,11 +6,12 @@
 
 The core insight is that a working session contains more pedagogical signal than any generic tutorial — the specific errors you hit, the wrong assumptions you made, and the turning points where you figured it out are exactly what a good lesson needs.
 
-The philosophy has three rules:
+The philosophy has four rules:
 
-1. **Hooks are dumb.** The PostToolUse hook is a Python script that appends and counts. No LLM calls, never blocks.
-2. **Main context stays lean.** Session data is compressed into a knowledge graph by a subagent. The main conversation only sees the graph, not hundreds of raw events.
-3. **Grounded or nothing.** If the concept can't be researched or the session has too little data, the plugin says so rather than producing a weak lesson.
+1. **Silent by default.** The plugin only speaks when explicitly summoned (`/lesson*`, `/lesson-done`). No unsolicited reminders in the middle of work. No blocking exit.
+2. **Hooks are dumb.** The PostToolUse hook is a Python script that appends, counts, and spawns a detached `lesson compress` subprocess. No LLM calls, never blocks.
+3. **Main context stays lean.** Session data is compressed into a knowledge graph by a deterministic Python pipeline. The main conversation only sees the graph, not hundreds of raw events.
+4. **Grounded or nothing.** If the concept can't be researched or the session has too little data, the plugin says so rather than producing a weak lesson.
 
 ---
 
@@ -48,12 +49,10 @@ lesson/                         ← Python package (pip install lesson)
 │   ├── lesson-profile.md   — /lesson-profile command (view learner profile)
 │   ├── lesson-index.md     — /lesson-index command (index all lessons)
 │   └── lesson-map.md       — /lesson-map command (concept map across lessons)
-├── agents/
-│   └── lesson-compress.md  — compression subagent definition
 ├── hooks/
 │   ├── hooks.json          — PostToolUse + Stop hook registration (Claude Code)
-│   ├── post_tool_use.py    — event logger + compression trigger + token tracking
-│   └── stop.py             — session-end nudge
+│   ├── post_tool_use.py    — event logger + silent compression trigger + token tracking
+│   └── stop.py             — passive session-end nudge (never blocks)
 ├── skills/
 │   ├── skill-claude-code.md   — reference (natively supported via commands/)
 │   ├── skill-codex.md         — full workflow for Codex ($lesson prefix, manual logging)
@@ -120,16 +119,16 @@ user works (tool calls fire)
           bump counter
           if counter >= LESSON_COMPRESS_EVERY (default: 25):
             reset counter
-            emit additionalContext reminder to Claude
+            spawn `lesson compress` in a detached subprocess (silent, ~50ms, zero tokens)
 
-Claude receives the reminder
-  └─> spawns Task subagent of type lesson-compress
+detached compression subprocess
+  └─> lesson/graph/builder.py::EventGraphBuilder
         reads arc.jsonl + session_graph.json + meta.json
         adds new nodes and edges to session_graph.json
         updates meta.json token_tracking (compression_cycles, graph_output_chars)
         archives arc.jsonl → arc.jsonl.archive.N
         resets arc.jsonl
-        reports one line to parent
+        writes nothing to the main conversation
 
 user types /lesson-done
   └─> commands/lesson-done.md
@@ -151,15 +150,7 @@ user types /lesson-done
 
 ## The Compression Pipeline
 
-There are two compression paths. Both produce the same `session_graph.json` format.
-
-### Path A — LLM Subagent (Claude Code)
-
-The `agents/lesson-compress.md` subagent reads `arc.jsonl`, uses Claude's judgment to promote events to nodes and wire edges, then archives consumed events. Accurate, context-aware, costs tokens.
-
-### Path B — Algorithmic (`lesson compress` CLI)
-
-`EventGraphBuilder` in `lesson/graph/builder.py` runs a deterministic, ~50ms, zero-token pipeline:
+Compression is deterministic, algorithmic, and silent. `EventGraphBuilder` in `lesson/graph/builder.py` runs a ~50 ms, zero-token pipeline:
 
 ```
 arc.jsonl events
@@ -175,7 +166,7 @@ arc.jsonl events
   └─> find_root_cause()                  # betweenness centrality on concept nodes
 ```
 
-Use Path B standalone or as a supplement to Path A. The `lesson done` CLI command runs Path B as a final pass before instructing the user to run `/lesson-done` for narrative generation.
+The PostToolUse hook fires this pipeline as a detached subprocess every `LESSON_COMPRESS_EVERY` significant events — the main conversation sees nothing. `/lesson-done` runs one final pass before narrative generation.
 
 ---
 
@@ -211,7 +202,7 @@ Stored in `session_graph.json`. Built incrementally by the compression pipeline.
 
 Node IDs use type-initial + integer: `g1`, `o1`, `h1`, `a1`, `c1`, `r1`. IDs are stable — never renumbered across compression cycles.
 
-**v2 schema change:** `flags` is a `dict[str, Any]` (e.g. `{"root_cause": true}`) rather than individual top-level booleans. The Pydantic models in `lesson/graph/schema.py` are the source of truth. The compression subagent (`agents/lesson-compress.md`) should be updated to emit v2 format.
+**v2 schema change:** `flags` is a `dict[str, Any]` (e.g. `{"root_cause": true}`) rather than individual top-level booleans. The Pydantic models in `lesson/graph/schema.py` are the source of truth.
 
 ### Edge types
 
@@ -231,7 +222,7 @@ Node IDs use type-initial + integer: `g1`, `o1`, `h1`, `a1`, `c1`, `r1`. IDs are
 
 ## Token Tracking
 
-The hook and compression subagent accumulate data in `meta.json` under `token_tracking`. `/lesson-done` computes final estimates before writing the lesson.
+The hook and the compression pipeline accumulate data in `meta.json` under `token_tracking`. `/lesson-done` computes final estimates before writing the lesson.
 
 ```json
 "token_tracking": {
@@ -317,7 +308,7 @@ Graceful degradation: if no tools are available, prints a helpful message and ex
 - Tool is `Bash` and result contains error keywords → significant
 - Tool is `Bash` with short output containing version strings → significant (likely a comparison/discovery)
 
-This flag is a hint to the compression subagent — events with `significant: true` are prioritized for promotion to graph nodes. Non-significant events (background reads, navigation) are usually not promoted.
+This flag is a hint to `EventGraphBuilder` — events with `significant: true` are prioritized for promotion to graph nodes. Non-significant events (background reads, navigation) are usually not promoted.
 
 ---
 
@@ -342,7 +333,7 @@ The plugin uses a "Single Core, Platform Wrapper" pattern. The core lesson forma
 | Dimension | Claude Code | Gemini CLI | All others |
 |---|---|---|---|
 | Event logging | PostToolUse hook (automatic) | BeforeTool hook (optional) | LLM logs manually to `arc.jsonl` |
-| Graph compression | Task subagent (automatic) | Inline or subagent | Inline at `/lesson-done` time |
+| Graph compression | `lesson compress` (detached subprocess, silent) | `lesson compress` (via hook) | `lesson compress` inline or at `/lesson-done` |
 | Session data root | `.claude/lessons/` | `.claude/lessons/` | `.claude/lessons/` (`.cursor/lessons/` on Cursor) |
 | Command prefix | `/lesson` | `/lesson` | `/lesson` (Codex: `$lesson`) |
 | Install target | `~/.claude/hooks.json` | `~/.gemini/GEMINI.md` | Platform-specific (see below) |
@@ -364,7 +355,7 @@ Antigravity   — <project>/.agent/lesson.md
 
 ### Data Flow (platforms without hooks)
 
-On hook-less platforms, the AI performs the steps that the hook and compression subagent would normally handle automatically:
+On hook-less platforms, the AI performs the steps that the hook would normally handle automatically:
 
 ```
 user types /lesson
@@ -428,8 +419,9 @@ All settings are optional environment variables. Set in shell or under `env` in 
 
 | Variable | Default | Effect |
 |---|---|---|
-| `LESSON_COMPRESS_EVERY` | `25` | Events between compression subagent runs |
-| `LESSON_STOP_MIN_EVENTS` | `5` | Minimum events for the Stop hook to nudge `/lesson-done` |
+| `LESSON_COMPRESS_EVERY` | `25` | Events between `lesson compress` subprocess spawns |
+| `LESSON_SILENT_HOOK` | `1` | When `1` (default) the PostToolUse hook runs `lesson compress` silently. Set to `0` for debugging to restore the legacy `additionalContext` reminder. |
+| `LESSON_STOP_MIN_EVENTS` | `5` | Minimum events for the Stop hook to emit its passive nudge |
 | `LESSON_MIN_EVENTS` | `8` | Minimum events for `/lesson-done` to proceed without warning |
 
 ---
@@ -443,7 +435,7 @@ Markdown is git-diffable, AI-readable (future Claude sessions can parse it clean
 The previous design wrote narrative `summary.md` files (500–1500 words per compression cycle). The graph encodes causality explicitly — edges say `contradicted` and `revealed`, not "and then." `/lesson-done` reads `root_cause_id` directly instead of re-deriving it from prose. The graph is also ~3× smaller than equivalent prose, reducing token cost for longer sessions.
 
 **Why are hooks LLM-free?**
-Hooks run after every tool call. Any latency or failure in a hook directly impacts the user's experience. A Python script that appends JSON and reads a file exits in milliseconds and can never produce an LLM error. Summarization, which requires judgment, belongs in Claude — hence the compression subagent.
+Hooks run after every tool call. Any latency or failure in a hook directly impacts the user's experience. A Python script that appends JSON and reads a file exits in milliseconds and can never produce an LLM error. Compression was originally done by an LLM subagent, which required the hook to nag the model — a constant interruption. Moving compression to a deterministic Python pipeline removed both the latency and the interruption.
 
 **Why a global learner profile?**
 Misconceptions are personal and project-agnostic. The same async misconception can appear in a Python project and a Node.js project. A per-project profile would miss the pattern. The global profile at `~/.claude/lessons/profile.json` accumulates knowledge across all projects.
@@ -451,8 +443,8 @@ Misconceptions are personal and project-agnostic. The same async misconception c
 **Why estimate tokens rather than count them exactly?**
 Claude Code does not expose API token counts to hooks or command prompts. Character ÷ 4 is a standard, widely-accepted approximation (±20%) that requires no external calls. The tracking is useful for order-of-magnitude awareness, not billing precision.
 
-**Why a Python package for compression instead of always using the LLM subagent?**
-The LLM subagent is accurate but costs tokens and adds latency. The algorithmic `EventGraphBuilder` runs in ~50ms with zero tokens: TF-IDF captures novelty, error patterns capture importance, and betweenness centrality finds the root cause without any natural language understanding. The two paths are complementary — Path A (LLM) produces richer hypothesis and misconception nodes; Path B (algorithmic) is faster and usable outside AI assistants. The eval framework in `eval/` measures the gap between them.
+**Why compress with a Python package instead of an LLM subagent?**
+An LLM subagent is accurate but costs tokens, adds latency, and — when spawned from a PostToolUse hook — interrupts the user's main conversation. The algorithmic `EventGraphBuilder` runs in ~50ms with zero tokens: TF-IDF captures novelty, error patterns capture importance, and betweenness centrality finds the root cause without any natural language understanding. Compression becomes a detached subprocess the user never sees, identical across every supported platform. The eval framework in `eval/` measures graph quality against hand-curated fixtures.
 
 **Why one skill file per platform rather than a single universal file?**
 Platform constraints differ enough that a single file would be riddled with conditionals. Each platform gets a clean, self-contained file that describes exactly how `/lesson` works on that platform — no irrelevant sections, no branching prose. The core lesson format (session graph schema, template, learner profile) stays identical across all skill files.

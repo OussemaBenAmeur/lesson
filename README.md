@@ -75,8 +75,9 @@ On platforms with hooks (Claude Code, Gemini), event logging is automatic. On al
 
 ## What Ships Today
 
+- **Silent-by-default tracking.** Once `/lesson` starts, the plugin never speaks to the main conversation until you call it back. No reminders, no exit blocks, no model nags.
 - Session tracking via hooks (Claude Code, Gemini) or manual LLM logging (all other platforms)
-- **Two compression paths** — LLM subagent (accurate, context-aware) or `lesson compress` CLI (deterministic, ~50ms, zero tokens)
+- **Deterministic compression** — `lesson compress` CLI runs `EventGraphBuilder` in ~50 ms with zero LLM tokens. The PostToolUse hook spawns it in a detached subprocess at the 25-event threshold.
 - Session knowledge graph (`session_graph.json`) — structured causal record of the session
 - Cross-session learner profile at `~/.claude/lessons/profile.json` — tracks recurring misconceptions and concepts across all projects and platforms
 - "You've hit this before" callout when the same misconception recurs
@@ -162,7 +163,7 @@ The argument is optional but guides how the final lesson is written.
 
 Read files. Edit code. Run commands. Fail. Recover. Try again.
 
-On Claude Code, the hook logs tool events into `arc.jsonl` automatically. On other platforms, the AI logs events itself. Either way, the raw trace gets folded into `session_graph.json` — by the LLM subagent on Claude Code, or by the `lesson compress` CLI at any time.
+On Claude Code and Gemini, the hook logs tool events into `arc.jsonl` automatically and — at the 25-event threshold — silently runs `lesson compress` as a detached subprocess. On other platforms, the AI logs events itself and calls `lesson compress` inline. Either way, the main conversation stays silent until you invoke a command.
 
 ### 3. Generate the lesson
 
@@ -226,7 +227,7 @@ arc.jsonl events
   → betweenness centrality → root_cause_id
 ```
 
-This complements the LLM subagent on Claude Code and replaces it on all other platforms.
+This is the sole compression path across all platforms — no LLM subagent is involved.
 
 ---
 
@@ -342,11 +343,12 @@ Every session records token usage estimates in `meta.json` under `token_tracking
 
 ## How It Works
 
-Three rules govern the architecture:
+Four rules govern the architecture:
 
-1. Hooks stay dumb — no LLM calls, no blocking, no side effects beyond writing to `arc.jsonl`.
-2. The main AI conversation stays lean — the compression subagent processes raw events so the main context only ever sees the structured graph.
-3. The lesson should be grounded or it should not be written — generation stops rather than inventing content when session data is insufficient.
+1. **Silent by default.** The plugin only speaks when explicitly invoked (`/lesson*`, `/lesson-done`). No hook-driven model reminders, no blocking exit.
+2. **Hooks stay dumb.** No LLM calls, no blocking, no side effects beyond writing `arc.jsonl` and spawning a detached compression subprocess.
+3. **The main AI conversation stays lean.** The deterministic compressor folds raw events into the graph so the main context only ever sees structured nodes and edges.
+4. **The lesson must be grounded or it must not be written.** Generation stops rather than inventing content when session data is insufficient.
 
 ### Flow (Claude Code)
 
@@ -357,12 +359,13 @@ Three rules govern the architecture:
 
 normal work
   -> hooks/post_tool_use.py logs compact events to arc.jsonl
-  -> every N events: AI is nudged to run the compression subagent
+  -> every N events: spawns `lesson compress` in a detached subprocess
+     (zero tokens, no output to the main conversation)
 
 compression cycle
-  -> agents/lesson-compress.md reads arc.jsonl
+  -> EventGraphBuilder reads arc.jsonl
   -> extends session_graph.json with nodes and edges
-  -> archives consumed events
+  -> archives consumed events to arc.jsonl.archive.N
 
 /lesson-done
   -> commands/lesson-done.md reads graph + tail events
@@ -377,15 +380,14 @@ compression cycle
 
 ### Flow (platforms without hooks)
 
-Same flow, but the AI logs events to `arc.jsonl` manually after each significant tool call, and builds the session graph inline at `/lesson-done` time instead of via a subagent.
+Same flow, but the AI logs events to `arc.jsonl` manually after each significant tool call and calls `lesson compress` (or builds the graph inline) at the 25-event threshold and at `/lesson-done` time. No LLM subagent is involved on any platform.
 
 ### Repo Components
 
 | File | Purpose |
 | --- | --- |
-| `hooks/post_tool_use.py` | Append-only event logger and compression trigger |
-| `hooks/stop.py` | Session-end nudge |
-| `agents/lesson-compress.md` | LLM compression subagent (Claude Code) |
+| `hooks/post_tool_use.py` | Append-only event logger; spawns the silent compression subprocess at threshold |
+| `hooks/stop.py` | Passive session-end nudge (never blocks exit) |
 | `commands/lesson.md` | Session initialization |
 | `commands/lesson-done.md` | Final lesson generation |
 | `commands/regenerate.md` | Regeneration flow |
@@ -411,7 +413,8 @@ All settings are optional environment variables.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `LESSON_COMPRESS_EVERY` | `25` | Events between compression runs |
-| `LESSON_STOP_MIN_EVENTS` | `5` | Min events before Stop hook nudges `/lesson-done` |
+| `LESSON_SILENT_HOOK` | `1` | When `1` (default) the PostToolUse hook spawns `lesson compress` silently. Set to `0` for debugging to restore the legacy `additionalContext` reminder. |
+| `LESSON_STOP_MIN_EVENTS` | `5` | Min events before the Stop hook emits its passive nudge |
 | `LESSON_MIN_EVENTS` | `8` | Min events before `/lesson-done` warns of thin session |
 | `CLAUDE_PLUGIN_ROOT` | (auto) | Path to plugin root, used in PDF generation |
 
@@ -451,7 +454,7 @@ Restart your AI assistant. Hooks and commands are registered at session start.
 `.claude/lessons/active-session` is missing. Run `/lesson` to start a new session, or `/lesson resume` to bring back the last one.
 
 **The Stop hook keeps nudging me**
-Delete `.claude/lessons/active-session` to abandon the session without generating a lesson.
+The nudge is a single non-blocking line. If you want silence even at Stop, delete `.claude/lessons/active-session` to abandon the session, or raise `LESSON_STOP_MIN_EVENTS` so the nudge only fires on substantial sessions.
 
 **PDF export does not appear**
 The markdown lesson is still valid. Install optional Mermaid and PDF tooling to get PDFs.
@@ -475,6 +478,13 @@ Design constraints worth preserving:
 - platform skill files should share the same core lesson format
 
 For a deeper technical overview, read [docs/architecture.md](docs/architecture.md).
+
+## Further Reading
+
+- [docs/architecture.md](docs/architecture.md) — design notes, data flow, schema reference, rationale
+- [docs/how-it-works.md](docs/how-it-works.md) — pedagogical deep dive from hook to lesson
+- [docs/blog-article.md](docs/blog-article.md) — short manifesto on why grounded lessons beat generic tutorials
+- [CHANGELOG.md](CHANGELOG.md) — release history
 
 ## License
 

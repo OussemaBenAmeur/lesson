@@ -5,10 +5,8 @@ This is the `lesson` plugin: it turns AI coding sessions into textbook-quality l
 ## What It Does
 
 - User runs `/lesson [notes]` → session tracking starts
-- During the session, tool events are logged to `arc.jsonl`
-- Every 25 events, the compression pipeline folds `arc.jsonl` into `session_graph.json`
-  - **Claude Code:** LLM subagent (`agents/lesson-compress.md`)
-  - **CLI / all platforms:** `lesson compress` command (algorithmic, deterministic, ~50ms, zero LLM tokens)
+- During the session, tool events are logged to `arc.jsonl`; the plugin **never speaks to the main conversation** until the user calls it back
+- Every 25 events, the PostToolUse hook spawns `lesson compress` in a detached subprocess — deterministic, ~50 ms, zero LLM tokens, invisible to the user
 - User runs `/lesson-done` → lesson is generated from the graph and written as markdown+PDF
 
 ## Key Files
@@ -23,7 +21,6 @@ This is the `lesson` plugin: it turns AI coding sessions into textbook-quality l
 | `commands/lesson-profile.md` | `/lesson-profile`: show learner history and token usage |
 | `commands/lesson-index.md` | `/lesson-index`: build HTML index from output lessons |
 | `commands/lesson-map.md` | `/lesson-map [--last N --since DATE --tag X]`: concept map |
-| `agents/lesson-compress.md` | Subagent: reads `arc.jsonl`, extends `session_graph.json`, archives events (Claude Code only) |
 
 ### Python Package (`lesson/`)
 | File | What it does |
@@ -43,12 +40,13 @@ This is the `lesson` plugin: it turns AI coding sessions into textbook-quality l
 ### Infrastructure
 | File | What it does |
 |---|---|
-| `hooks/post_tool_use.py` | PostToolUse hook: appends to `arc.jsonl`, tracks `arc_input_chars`, triggers compression reminder |
-| `hooks/stop.py` | Stop hook: nudges user to run `/lesson-done` |
+| `hooks/post_tool_use.py` | PostToolUse hook: appends to `arc.jsonl`, tracks `arc_input_chars`, silently spawns `lesson compress` at threshold |
+| `hooks/stop.py` | Stop hook: one-line passive nudge (never blocks exit) |
 | `templates/lesson.md.tmpl` | Lesson template with `{{PLACEHOLDER}}` fields |
 | `scripts/render_pdf.py` | Convert `<slug>.md` → `<slug>.pdf` (mermaid → SVG → PDF). Always exits 0. |
 | `scripts/install.py` | Multi-platform install dispatcher (`--list` to see all platforms) |
-| `skills/skill-<platform>.md` | Per-platform skill file (Codex, Cursor, Gemini, Copilot, OpenCode, OpenClaw, Droid, Trae, Antigravity) |
+| `skills/_shared.md` | Shared platform-agnostic workflow (concatenated into each skill at install time) |
+| `skills/skill-<platform>.md` | Per-platform skill delta (Codex, Cursor, Gemini, Copilot, OpenCode, OpenClaw, Droid, Trae, Antigravity) |
 | `eval/metrics.py` | Graph quality metrics: node precision/recall/F1, edge accuracy, compression ratio |
 | `eval/benchmark.py` | Benchmark algorithmic compression against LLM baseline |
 | `docs/architecture.md` | Full architecture reference |
@@ -91,15 +89,15 @@ lesson resume [slug]         # resume last or named session
 lesson done                  # final compression + instructions for /lesson-done
 ```
 
-The `lesson compress` command runs `EventGraphBuilder` — deterministic, ~50ms, zero LLM tokens.
-Use it instead of (or alongside) the LLM subagent on Claude Code, or as the sole compression
-method on other platforms.
+The `lesson compress` command runs `EventGraphBuilder` — deterministic, ~50 ms, zero LLM tokens. On Claude Code and any platform that invokes `lesson compress` from a hook, this is the only compression path.
 
 Optional deps: `pip install lesson[nlp]` for semantic deduplication (sentence-transformers).
 
 ## Critical Rules
 
 - `hooks/post_tool_use.py` must **never crash** — it exits 0 on any exception
+- `hooks/post_tool_use.py` must **never write to the main conversation** in the default (silent) mode — it only appends to `arc.jsonl` and spawns a detached `lesson compress` subprocess
+- `hooks/stop.py` must **never block** session exit — at most a passive one-line `systemMessage`
 - `scripts/render_pdf.py` must **never block lesson generation** — exits 0 on failure
 - Node IDs in `session_graph.json` are **stable forever** — only append new ones
 - The main conversation **never reads raw `arc.jsonl` directly** — only the compression pipeline does
@@ -120,8 +118,9 @@ Session data root: `.claude/lessons/` (Claude Code, Gemini, all others) or `.cur
 | Variable | Default | Meaning |
 |---|---|---|
 | `LESSON_COMPRESS_EVERY` | 25 | Events between compression runs |
-| `LESSON_STOP_MIN_EVENTS` | 5 | Min events before Stop hook nudges |
-| `LESSON_MIN_EVENTS` | 8 | Min events before `/lesson-done` warns |
+| `LESSON_SILENT_HOOK` | 1 | When `1` (default) the PostToolUse hook spawns `lesson compress` silently. Set to `0` for debugging to restore the legacy `additionalContext` reminder. |
+| `LESSON_STOP_MIN_EVENTS` | 5 | Min events before the Stop hook emits its passive nudge |
+| `LESSON_MIN_EVENTS` | 8 | Min events before `/lesson-done` warns of a thin session |
 | `CLAUDE_PLUGIN_ROOT` | (auto-detected) | Absolute path to this plugin directory |
 
 ## Output

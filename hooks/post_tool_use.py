@@ -6,12 +6,15 @@ cwd has an active lesson session (marker file present):
   - Appends one compressed event line to arc.jsonl (with significance flag)
   - Updates meta.json token_tracking.arc_input_chars (running total)
   - Bumps the compression counter
-  - At threshold: emits an additionalContext reminder to run algorithmic compression
+  - At threshold: runs `lesson compress` in a detached subprocess — silently
 
 Design notes:
 - Always installed but a no-op in projects without .claude/lessons/active-session.
-- Never calls any LLM. Appends, counts, and signals only.
+- Never calls any LLM. Appends, counts, and spawns the deterministic compressor.
 - Must never crash: any exception exits 0 silently to never block tool calls.
+- Must never talk to the main conversation: stdout stays empty in the default
+  (silent) mode. Set LESSON_SILENT_HOOK=0 only for debugging — it restores the
+  legacy additionalContext reminder and does not spawn the subprocess.
 - Significance scoring uses lesson.nlp.scorer.SignificanceScorer when the
   package is installed; falls back to the legacy heuristic otherwise.
 """
@@ -21,11 +24,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 COMPRESS_EVERY = int(os.environ.get("LESSON_COMPRESS_EVERY", "25"))
+SILENT_HOOK = os.environ.get("LESSON_SILENT_HOOK", "1") != "0"
 ARGS_CAP = 500
 RESULT_CAP = 1000
 
@@ -198,35 +204,75 @@ def main() -> int:
         return 0
 
     if count >= COMPRESS_EVERY:
+        # Reset counter first — if compression fails, we don't want to retry
+        # every single tool call and spam the user / subprocess.
         try:
             counter_file.write_text("0")
         except Exception:
             pass
-        reminder = (
-            f"[/lesson] Tracked session '{slug}' has accumulated {count} raw events "
-            f"since the last compression. Preferred: run `lesson compress --cwd {session_dir.parent.parent.parent}` "
-            f"(algorithmic, <100ms, no LLM call). "
-            f"Fallback if package not installed: spawn a Task subagent of type 'lesson-compress' with this prompt:\n\n"
-            f"    Compress the /lesson arc log at {session_dir}. Read arc.jsonl and "
-            f"extend session_graph.json with new nodes and edges derived from the events. "
-            f"Prioritise events where significant=true. Update meta.json token_tracking "
-            f"with compression_cycles and graph_output_chars. Archive arc.jsonl to "
-            f"arc.jsonl.archive.N and reset it. Follow the lesson-compress skill "
-            f"instructions exactly. Report one line when done.\n\n"
-            f"This keeps the main context lean. Do not read arc.jsonl yourself."
-        )
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": reminder,
-            }
-        }
-        try:
-            print(json.dumps(output))
-        except Exception:
-            pass
+
+        project_root = session_dir.parent.parent.parent
+        if SILENT_HOOK:
+            _spawn_compression(project_root)
+        else:
+            _emit_legacy_reminder(slug, count, project_root, session_dir)
 
     return 0
+
+
+def _spawn_compression(project_root: Path) -> None:
+    """Launch `lesson compress` in a detached subprocess. Never blocks, never
+    writes to stdout/stderr visible to the model. Silent failure on any error.
+    """
+    cmd = _resolve_lesson_command()
+    if cmd is None:
+        return
+    try:
+        subprocess.Popen(
+            cmd + ["compress", "--cwd", str(project_root)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except Exception:
+        pass
+
+
+def _resolve_lesson_command() -> list[str] | None:
+    """Locate a way to invoke the `lesson` CLI without disturbing the parent.
+    Returns the argv prefix, or None if no resolver is available.
+    """
+    exe = shutil.which("lesson")
+    if exe:
+        return [exe]
+    try:
+        import lesson  # noqa: F401
+        return [sys.executable, "-m", "lesson.cli"]
+    except Exception:
+        return None
+
+
+def _emit_legacy_reminder(slug: str, count: int, project_root: Path, session_dir: Path) -> None:
+    """Legacy path retained for debugging (set LESSON_SILENT_HOOK=0).
+    Emits an additionalContext reminder to the main conversation. Never used in
+    normal operation — the silent subprocess path is the default.
+    """
+    reminder = (
+        f"[/lesson] Tracked session '{slug}' has accumulated {count} raw events. "
+        f"Run `lesson compress --cwd {project_root}` to fold them into session_graph.json."
+    )
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": reminder,
+        }
+    }
+    try:
+        print(json.dumps(output))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

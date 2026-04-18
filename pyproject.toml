@@ -4,9 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lesson"
-version = "0.1.0"
-description = "Turns AI debugging sessions into textbook-quality lessons via algorithmic knowledge graph extraction"
+version = "0.3.0"
+description = "Turn AI coding sessions into grounded, textbook-quality lessons via algorithmic knowledge-graph extraction."
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Oussema Ben Ameur", email = "oussemabenameur9@gmail.com"},
+]
+keywords = [
+    "learning",
+    "education",
+    "lesson",
+    "debugging",
+    "knowledge-graph",
+    "claude-code",
+    "multi-platform",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Software Development :: Documentation",
+]
 dependencies = [
     "pydantic>=2.0",
     "networkx>=3.0",
@@ -31,6 +58,12 @@ dev = [
 all = [
     "lesson[nlp,dev]",
 ]
+
+[project.urls]
+Homepage = "https://github.com/OussemaBenAmeur/lesson"
+Repository = "https://github.com/OussemaBenAmeur/lesson"
+Issues = "https://github.com/OussemaBenAmeur/lesson/issues"
+Changelog = "https://github.com/OussemaBenAmeur/lesson/blob/main/CHANGELOG.md"
 
 [project.scripts]
 lesson = "lesson.cli:app"

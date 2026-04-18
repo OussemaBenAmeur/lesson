@@ -1,8 +1,35 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.DS_Store
+*.egg-info/
+build/
+dist/
+
+# Test & coverage artifacts
+.coverage
+.coverage.*
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# Environments
 .venv/
+venv/
+env/
+
+# Editors
+.idea/
+.vscode/
 *.swp
 *.swo
-/reflections
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local docs/build output
+docs/_build/
+
+# Local scratch / exploratory outputs
+/reflections/

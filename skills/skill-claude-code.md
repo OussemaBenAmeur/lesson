@@ -1,10 +1,8 @@
 # /lesson — Claude Code Skill
 
-This skill is already natively supported via commands in `~/.claude/plugins/lesson/commands/`.
-This file is provided for reference only.
+This skill is natively supported via commands in `~/.claude/plugins/lesson/commands/` and hooks in `~/.claude/plugins/lesson/hooks/`. No manual logging is needed — the PostToolUse hook writes `arc.jsonl` and silently runs `lesson compress` at the 25-event threshold, and the Stop hook emits a single passive nudge without blocking exit.
 
-Claude Code uses PostToolUse and Stop hooks from `hooks/hooks.json`. Sessions are tracked
-automatically. See `docs/architecture.md` for full details.
+This file is provided for reference only. See `docs/architecture.md` for full details.
 
 **Install:**
 ```bash
