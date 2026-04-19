@@ -99,6 +99,14 @@ class TestSessionManager:
         )
         assert sm.arc_event_count(slug) == 2
 
+    def test_prompt_event_count_with_lines(self, sm):
+        slug = sm.create("fix")
+        sm.prompts_path(slug).write_text(
+            '{"ts":1.0,"session_id":"copilot","prompt_text_head":"why","prompt_hash":"a"}\n'
+            '{"ts":2.0,"session_id":"copilot","prompt_text_head":"how","prompt_hash":"b"}\n'
+        )
+        assert sm.prompt_event_count(slug) == 2
+
     def test_update_token_tracking(self, sm):
         slug = sm.create("fix")
         sm.update_token_tracking(slug, arc_input_chars=100)
@@ -116,3 +124,15 @@ class TestSessionManager:
         slug = sm.create("fix")
         expected = sm.lessons_dir / "sessions" / slug
         assert sm.session_dir(slug) == expected
+
+    def test_detects_cursor_lessons_root_from_active_session(self, tmp_path):
+        cursor_lessons = tmp_path / ".cursor" / "lessons"
+        cursor_lessons.mkdir(parents=True)
+        (cursor_lessons / "active-session").write_text("cursor-slug")
+        sm = SessionManager(tmp_path)
+        assert sm.lessons_dir == cursor_lessons
+
+    def test_lessons_root_env_override(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LESSON_DATA_ROOT", ".cursor/lessons")
+        sm = SessionManager(tmp_path)
+        assert sm.lessons_dir == tmp_path / ".cursor" / "lessons"

@@ -1,0 +1,12 @@
+{
+  "cwd": "/tmp/project",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "main.py"
+  },
+  "tool_response": {
+    "content": "saved"
+  },
+  "tool_call_id": "opencode-call-1",
+  "session_id": "opencode-session"
+}

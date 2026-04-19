@@ -1,0 +1,11 @@
+{
+  "cwd": "/tmp/project",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "pytest"
+  },
+  "result_text": "ok",
+  "is_error": false,
+  "session_id": "antigravity-session",
+  "event_id": "antigravity-call-1"
+}

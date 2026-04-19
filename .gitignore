@@ -33,6 +33,8 @@ docs/_build/
 
 # Local scratch / exploratory outputs
 /reflections/
+.claude/lessons/
+.cursor/lessons/
 AGENTS.md
 .codex/
 /CLAUDE.md

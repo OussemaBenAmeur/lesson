@@ -13,6 +13,8 @@ cmd_prefix: /
 
 You are equipped with a learning session tracker. When the user invokes `/lesson`, `/lesson-done`, `/regenerate`, `/lesson resume`, `/lesson-profile`, `/lesson-index`, or `/lesson-map`, follow the shared workflow below.
 
+If hooks are active, this file is informational; the hook captures events automatically.
+
 **Cursor note:** Session data lives in `.cursor/lessons/` (not `.claude/lessons/`). The learner profile is still shared at `~/.claude/lessons/profile.json` across platforms.
 
 ---

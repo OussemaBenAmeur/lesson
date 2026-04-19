@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
+
+
+DEFAULT_LESSONS_ROOT = ".claude/lessons"
+CURSOR_LESSONS_ROOT = ".cursor/lessons"
 
 
 def _slugify(text: str) -> str:
@@ -20,9 +25,27 @@ def _slugify(text: str) -> str:
 class SessionManager:
     """Manage lesson session lifecycle inside a project directory."""
 
-    def __init__(self, cwd: Path | str | None = None) -> None:
+    def __init__(self, cwd: Path | str | None = None, lessons_root: str | Path | None = None) -> None:
         self._cwd = Path(cwd) if cwd else Path.cwd()
-        self._lessons_dir = self._cwd / ".claude" / "lessons"
+        root = self._resolve_lessons_root(lessons_root)
+        self._lessons_dir = self._cwd / root
+
+    def _resolve_lessons_root(self, lessons_root: str | Path | None) -> Path:
+        if lessons_root is not None:
+            return Path(lessons_root)
+
+        env_root = os.environ.get("LESSON_DATA_ROOT")
+        if env_root:
+            return Path(env_root)
+
+        cursor_dir = self._cwd / CURSOR_LESSONS_ROOT
+        claude_dir = self._cwd / DEFAULT_LESSONS_ROOT
+        cursor_markers = [cursor_dir / "active-session", cursor_dir / "last-session"]
+        if cursor_dir.exists() and any(marker.exists() for marker in cursor_markers):
+            return Path(CURSOR_LESSONS_ROOT)
+        if cursor_dir.exists() and not claude_dir.exists():
+            return Path(CURSOR_LESSONS_ROOT)
+        return Path(DEFAULT_LESSONS_ROOT)
 
     @property
     def lessons_dir(self) -> Path:
@@ -117,6 +140,9 @@ class SessionManager:
     def counter_path(self, slug: str) -> Path:
         return self.session_dir(slug) / "counter"
 
+    def prompts_path(self, slug: str) -> Path:
+        return self.session_dir(slug) / "prompts.jsonl"
+
     def arc_event_count(self, slug: str) -> int:
         total = 0
         arc = self.arc_path(slug)
@@ -128,6 +154,15 @@ class SessionManager:
             except Exception:
                 pass
         return total
+
+    def prompt_event_count(self, slug: str) -> int:
+        prompts = self.prompts_path(slug)
+        if not prompts.exists():
+            return 0
+        try:
+            return sum(1 for _ in prompts.open(encoding="utf-8", errors="ignore"))
+        except Exception:
+            return 0
 
     def update_token_tracking(self, slug: str, **kwargs) -> None:
         meta_path = self.session_dir(slug) / "meta.json"

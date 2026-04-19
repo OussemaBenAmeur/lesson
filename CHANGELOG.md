@@ -4,6 +4,22 @@ All notable changes to `lesson` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Shared hook packages under `lesson/hooks/` for post-tool logging, stop handling, payload normalization, and platform-specific adapters.
+- Hook or bridge support for Codex, Cursor, GitHub Copilot CLI, OpenCode, and Antigravity MCP.
+- New unit coverage for the shared adapter, Cursor and Copilot wrappers, OpenCode bridge, Antigravity MCP server, and installer merge behavior.
+- `docs/hooks.md` documenting install surfaces, hook events, and current platform limits.
+- Copilot `userPromptSubmitted` capture now writes sidecar `prompts.jsonl` records that are excluded from compression.
+
+### Changed
+
+- `scripts/install.py` now merges JSON and TOML config instead of appending one-off files only, and it installs platform-specific hook/bridge assets where supported.
+- `SessionManager` now auto-detects `.cursor/lessons/` and honors `LESSON_DATA_ROOT` so CLI commands can operate on Cursor-managed sessions.
+- `lesson stats` now surfaces sidecar prompt counts separately from compressed tool events.
+
 ## [0.3.0] — 2026-04-18
 
 Silent-by-default release and first OSS-ready cut.

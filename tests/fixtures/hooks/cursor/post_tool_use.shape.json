@@ -1,0 +1,12 @@
+{
+  "cwd": "/tmp/project",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/app.tsx"
+  },
+  "tool_response": {
+    "content": "updated"
+  },
+  "tool_call_id": "cursor-call-1",
+  "conversation_id": "cursor-session"
+}

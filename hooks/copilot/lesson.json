@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": "bash ./scripts/lesson/post_tool_use_copilot.sh"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "bash ./scripts/lesson/session_end_copilot.sh"
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "bash ./scripts/lesson/session_start_copilot.sh"
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "command": "bash ./scripts/lesson/user_prompt_copilot.sh"
+      }
+    ]
+  }
+}

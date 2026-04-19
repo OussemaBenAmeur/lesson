@@ -1,0 +1,12 @@
+{
+  "cwd": "/tmp/project",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "pytest"
+  },
+  "tool_response": {
+    "stdout": "1 passed",
+    "exit_code": 0
+  },
+  "session_id": "codex-session"
+}

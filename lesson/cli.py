@@ -145,6 +145,7 @@ def stats(
     tt = meta.get("token_tracking", {})
     table.add_row("arc_input_chars", str(tt.get("arc_input_chars", 0)))
     table.add_row("total_events", str(sm.arc_event_count(slug)))
+    table.add_row("prompt_events", str(sm.prompt_event_count(slug)))
     table.add_row("root_cause_id", str(graph.root_cause_id))
     table.add_row("resolution_id", str(graph.resolution_id))
 

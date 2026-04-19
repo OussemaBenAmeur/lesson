@@ -1,0 +1,12 @@
+{
+  "cwd": "/tmp/project",
+  "toolName": "Bash",
+  "toolInput": {
+    "command": "python -m lesson compress"
+  },
+  "toolOutput": {
+    "stdout": "ok"
+  },
+  "exitCode": 0,
+  "sessionId": "copilot-session"
+}

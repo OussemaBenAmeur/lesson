@@ -60,27 +60,27 @@ That difference matters. A working session contains high-quality teaching signal
 
 Works across 10 AI coding platforms. One install script, one core format.
 
-| Platform | Hook support | Config location | Command prefix |
-| --- | --- | --- | --- |
-| **Claude Code** | PostToolUse + Stop (automatic) | `~/.claude/hooks.json` | `/lesson` |
-| **Codex** | None (manual logging) | `~/.codex/CODEX.md` | `$lesson` |
-| **Cursor** | None (manual logging) | `<project>/.cursor/rules/lesson.mdc` | `/lesson` |
-| **Gemini CLI** | BeforeTool (optional) | `~/.gemini/GEMINI.md` | `/lesson` |
-| **GitHub Copilot CLI** | None (manual logging) | `~/.github/copilot-instructions.md` | `/lesson` |
-| **OpenCode** | None (manual logging) | `~/.opencode/OPENCODE.md` | `/lesson` |
-| **OpenClaw** | None (manual logging) | `~/.claw/CLAW.md` | `/lesson` |
-| **Factory Droid** | None (manual logging) | `~/.droid/DROID.md` | `/lesson` |
-| **Trae** | None (manual logging) | `~/.trae/TRAE.md` | `/lesson` |
-| **Google Antigravity** | None (manual logging) | `<project>/.agent/lesson.md` | `/lesson` |
+| Platform | Hook support | Config location | Install command | Command prefix |
+| --- | --- | --- | --- | --- |
+| **Claude Code** | PostToolUse + Stop (automatic) | `~/.claude/hooks.json` | `python3 scripts/install.py --platform claude-code` | `/lesson` |
+| **Codex** | PostToolUse + Stop + SessionStart (automatic, Bash tool events today) | `~/.codex/hooks.json`, `~/.codex/config.toml`, `~/.codex/CODEX.md` | `python3 scripts/install.py --platform codex` | `$lesson` |
+| **Cursor** | `postToolUse` + `afterFileEdit` + `stop` (automatic, deduped by tool call id) | `~/.cursor/hooks.json`, `<project>/.cursor/hooks.json`, `<project>/.cursor/rules/lesson.mdc` | `python3 scripts/install.py --platform cursor` | `/lesson` |
+| **Gemini CLI** | BeforeTool (optional) | `~/.gemini/GEMINI.md` | `python3 scripts/install.py --platform gemini` | `/lesson` |
+| **GitHub Copilot CLI** | `postToolUse` + `sessionStart` + `sessionEnd` + prompt sidecar capture (automatic, repo-scoped hooks) | `~/.github/copilot-instructions.md`, `<repo>/.github/hooks/lesson.json` | `python3 scripts/install.py --platform copilot` | `/lesson` |
+| **OpenCode** | `tool.after` + `session.start` + `session.idle` via plugin bridge | `~/.opencode/OPENCODE.md`, `~/.opencode/opencode.json`, `~/.config/opencode/plugins/lesson/index.mjs` | `python3 scripts/install.py --platform opencode` | `/lesson` |
+| **OpenClaw** | None (manual logging) | `~/.claw/CLAW.md` | `python3 scripts/install.py --platform openclaw` | `/lesson` |
+| **Factory Droid** | None (manual logging) | `~/.droid/DROID.md` | `python3 scripts/install.py --platform droid` | `/lesson` |
+| **Trae** | None (manual logging) | `~/.trae/TRAE.md` | `python3 scripts/install.py --platform trae` | `/lesson` |
+| **Google Antigravity** | Via MCP (LLM-mediated) | `<project>/.agent/lesson.md`, `.agent/rules/`, `.agent/workflows/`, `~/.gemini/settings.json` | `python3 scripts/install.py --platform antigravity` | `/lesson` |
 
-On platforms with hooks (Claude Code, Gemini), event logging is automatic. On all others, the AI logs significant events manually to `arc.jsonl` during the session.
+Automatic capture is now available on Claude Code, Codex, Cursor, GitHub Copilot CLI, and OpenCode. Antigravity uses a local MCP server, so capture is tool-mediated rather than native-hook-driven. On Copilot, user prompts are captured into a sidecar `prompts.jsonl` stream and are intentionally excluded from compression. OpenClaw, Factory Droid, and Trae still rely on manual event logging.
 
 ---
 
 ## What Ships Today
 
 - **Silent-by-default tracking.** Once `/lesson` starts, the plugin never speaks to the main conversation until you call it back. No reminders, no exit blocks, no model nags.
-- Session tracking via hooks (Claude Code, Gemini) or manual LLM logging (all other platforms)
+- Session tracking via hooks or local bridges on Claude Code, Codex, Cursor, GitHub Copilot CLI, OpenCode, and Antigravity
 - **Deterministic compression** — `lesson compress` CLI runs `EventGraphBuilder` in ~50 ms with zero LLM tokens. The PostToolUse hook spawns it in a detached subprocess at the 25-event threshold.
 - Session knowledge graph (`session_graph.json`) — structured causal record of the session
 - Cross-session learner profile at `~/.claude/lessons/profile.json` — tracks recurring misconceptions and concepts across all projects and platforms
@@ -151,6 +151,8 @@ python3 scripts/install.py --platform codex
 ```
 
 Restart your AI assistant after install. On Claude Code, hooks are registered at session start.
+
+For platform-specific hook details and known limits, see [docs/hooks.md](docs/hooks.md).
 
 ---
 

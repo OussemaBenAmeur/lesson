@@ -77,9 +77,11 @@ class TestSilentByDefault:
             "tool_input": {"file_path": "x.py"},
             "tool_response": {"content": "ok"},
         }
-        with patch.object(hook_module.subprocess, "Popen") as mock_popen:
+        with patch.object(hook_module.hook_adapter.subprocess, "Popen") as mock_popen:
             mock_popen.return_value = SimpleNamespace()
-            with patch.object(hook_module, "_resolve_lesson_command", return_value=["/fake/lesson"]):
+            with patch.object(
+                hook_module.hook_adapter, "_resolve_lesson_command", return_value=["/fake/lesson"]
+            ):
                 out = _run_hook(hook_module, monkeypatch, event, capsys)
 
         assert out == "", f"silent hook must not emit stdout at threshold: {out!r}"
@@ -97,8 +99,10 @@ class TestCompressionSubprocess:
             "tool_input": {"file_path": "x.py"},
             "tool_response": {"content": "ok"},
         }
-        with patch.object(hook_module.subprocess, "Popen") as mock_popen:
-            with patch.object(hook_module, "_resolve_lesson_command", return_value=["/fake/lesson"]):
+        with patch.object(hook_module.hook_adapter.subprocess, "Popen") as mock_popen:
+            with patch.object(
+                hook_module.hook_adapter, "_resolve_lesson_command", return_value=["/fake/lesson"]
+            ):
                 _run_hook(hook_module, monkeypatch, event, capsys)
 
         assert mock_popen.call_count == 1
@@ -110,8 +114,8 @@ class TestCompressionSubprocess:
         assert "--cwd" in argv
         # Must be detached and silent.
         assert kwargs.get("start_new_session") is True
-        assert kwargs.get("stdout") == hook_module.subprocess.DEVNULL
-        assert kwargs.get("stderr") == hook_module.subprocess.DEVNULL
+        assert kwargs.get("stdout") == hook_module.hook_adapter.subprocess.DEVNULL
+        assert kwargs.get("stderr") == hook_module.hook_adapter.subprocess.DEVNULL
 
     def test_counter_resets_even_if_resolver_missing(
         self, hook_module, tmp_path, monkeypatch, capsys
@@ -125,7 +129,7 @@ class TestCompressionSubprocess:
             "tool_input": {"file_path": "x.py"},
             "tool_response": {"content": "ok"},
         }
-        with patch.object(hook_module, "_resolve_lesson_command", return_value=None):
+        with patch.object(hook_module.hook_adapter, "_resolve_lesson_command", return_value=None):
             out = _run_hook(hook_module, monkeypatch, event, capsys)
 
         assert out == ""

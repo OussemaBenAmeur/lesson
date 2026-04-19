@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.cursor/hooks/post_tool_use_cursor.py",
+            "timeoutSec": 10
+          }
+        ]
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.cursor/hooks/after_file_edit_cursor.py",
+            "timeoutSec": 10
+          }
+        ]
+      }
+    ],
+    "stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.cursor/hooks/stop_cursor.py",
+            "timeoutSec": 10
+          }
+        ]
+      }
+    ]
+  }
+}
