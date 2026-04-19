@@ -7,7 +7,6 @@ if the model is unavailable.
 
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,7 +35,7 @@ class NodeEmbedder:
         self._model_name = model_name
         self._threshold = threshold
         self._model = None
-        self._cache: dict[str, np.ndarray] = {}
+        self._cache: dict = {}
 
     def _load(self):
         if self._model is None:
@@ -46,7 +45,8 @@ class NodeEmbedder:
             except Exception:
                 self._model = False  # sentinel: unavailable
 
-    def _encode(self, texts: list[str]) -> np.ndarray | None:
+    def _encode(self, texts: list[str]):
+        import numpy as np
         self._load()
         if self._model is False:
             return None
@@ -57,7 +57,8 @@ class NodeEmbedder:
                 self._cache[t] = v
         return np.vstack([self._cache[t] for t in texts])
 
-    def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
+    def _cosine(self, a, b) -> float:
+        import numpy as np
         return float(np.dot(a, b))  # both are L2-normalized
 
     def find_duplicate(
