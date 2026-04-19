@@ -136,7 +136,7 @@ def _write_file(dest: Path, content: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _install_claude_code() -> None:
-    """Register PostToolUse + Stop hooks in ~/.claude/hooks.json."""
+    """Register PostToolUse + Stop hooks and symlink commands into ~/.claude/commands/."""
     hooks_json = Path.home() / ".claude" / "hooks.json"
     hooks_json.parent.mkdir(parents=True, exist_ok=True)
 
@@ -170,8 +170,21 @@ def _install_claude_code() -> None:
     else:
         print(f"  ↳ Hooks already registered in {hooks_json}. No changes.")
 
-    # Ensure commands are symlinked / noted (they live in PLUGIN_ROOT/commands/)
-    print(f"  ↳ Commands: {PLUGIN_ROOT / 'commands'}/ (already part of the plugin)")
+    # Symlink commands into ~/.claude/commands/ so they appear as /lesson, /lesson-done, etc.
+    commands_src = PLUGIN_ROOT / "commands"
+    commands_dst = Path.home() / ".claude" / "commands"
+    commands_dst.mkdir(parents=True, exist_ok=True)
+
+    for src in sorted(commands_src.glob("*.md")):
+        dst = commands_dst / src.name
+        if dst.is_symlink():
+            dst.unlink()
+        elif dst.exists():
+            print(f"  WARNING: {dst} already exists and is not a symlink — skipping.")
+            continue
+        dst.symlink_to(src)
+        cmd_name = src.stem
+        print(f"  ↳ /{cmd_name}  →  {dst}")
 
 
 def _install_codex() -> None:
