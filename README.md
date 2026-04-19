@@ -1,5 +1,9 @@
 # lesson
 
+[![PyPI](https://img.shields.io/pypi/v/lesson-ai)](https://pypi.org/project/lesson-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/lesson-ai)](https://pypi.org/project/lesson-ai/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **An AI coding plugin that turns real working sessions into grounded, reusable lessons.**
 
 `lesson` watches tool activity inside a live AI session, keeps a compact record of the important turns, and turns the final arc into a lesson built from your actual files, commands, errors, and wrong assumptions.
@@ -108,11 +112,18 @@ On platforms with hooks (Claude Code, Gemini), event logging is automatic. On al
 ### Python Package
 
 ```bash
+pip install lesson-ai                  # core (networkx, pydantic, typer, rich, plotly)
+pip install "lesson-ai[nlp]"           # + semantic deduplication (numpy, spacy, sentence-transformers)
+```
+
+Or install from source:
+
+```bash
 git clone https://github.com/OussemaBenAmeur/lesson.git
 cd lesson
 
-pip install -e .              # core (networkx, pydantic, typer, rich, plotly)
-pip install -e ".[nlp]"       # + semantic deduplication (spacy, sentence-transformers)
+pip install -e .              # core
+pip install -e ".[nlp]"       # + semantic deduplication
 pip install -e ".[dev]"       # + pytest, hypothesis
 ```
 
