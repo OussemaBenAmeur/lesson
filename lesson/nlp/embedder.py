@@ -46,10 +46,10 @@ class NodeEmbedder:
                 self._model = False  # sentinel: unavailable
 
     def _encode(self, texts: list[str]):
-        import numpy as np
         self._load()
         if self._model is False:
             return None
+        import numpy as np
         uncached = [t for t in texts if t not in self._cache]
         if uncached:
             vecs = self._model.encode(uncached, normalize_embeddings=True, show_progress_bar=False)
