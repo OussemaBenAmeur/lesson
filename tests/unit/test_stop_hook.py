@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -76,3 +77,42 @@ class TestNonBlocking:
         event = {"cwd": str(tmp_path), "stop_hook_active": True}
         out = _run_hook(hook_module, monkeypatch, event, capsys)
         assert out == "", "hook must not re-nudge once /lesson-done is already running"
+
+
+class TestStopCodexScriptForm:
+    """Regression: stop_codex.py must work when run as a plain script.
+
+    Before the fix, stop_codex.py used runpy to dispatch to hooks/stop.py
+    (the Claude wrapper), which added only its own parent to sys.path and
+    could not find lesson.hooks.stop in the installed _support bundle.
+    The hook would silently return 0 and the reminder would never appear.
+    """
+
+    def test_emits_reminder_when_session_active(self, tmp_path, monkeypatch):
+        _make_session(tmp_path, "codex-sess", events=10)
+        monkeypatch.setenv("LESSON_STOP_MIN_EVENTS", "3")
+        script = Path(__file__).resolve().parents[2] / "hooks" / "codex" / "stop_codex.py"
+        event = json.dumps({"cwd": str(tmp_path)})
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            input=event,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip(), "stop_codex.py must emit reminder JSON when session is active"
+        data = json.loads(result.stdout.strip())
+        hso = data.get("hookSpecificOutput", {})
+        assert hso.get("hookEventName") == "Stop"
+        assert "codex-sess" in hso.get("systemMessage", "")
+
+    def test_silent_without_active_session(self, tmp_path):
+        script = Path(__file__).resolve().parents[2] / "hooks" / "codex" / "stop_codex.py"
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            input=json.dumps({"cwd": str(tmp_path)}),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""

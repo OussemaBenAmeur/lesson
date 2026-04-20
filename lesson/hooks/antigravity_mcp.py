@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
-from .adapter import handle_post_tool_use
-from .antigravity import extract_record_event
-from .stop import handle_stop
+# Support both `python3 -m lesson.hooks.antigravity_mcp` (package context) and
+# `python3 /path/to/antigravity_mcp.py` (script context, no package — the form
+# used by the MCP server launcher after install).
+if __package__:
+    from .adapter import handle_post_tool_use
+    from .antigravity import extract_record_event
+    from .stop import handle_stop
+else:
+    _HERE = Path(__file__).resolve().parent
+    _SUPPORT = _HERE / "_support"
+    for _candidate in (_HERE.parent.parent, _SUPPORT):
+        if _candidate.exists() and str(_candidate) not in sys.path:
+            sys.path.insert(0, str(_candidate))
+    from lesson.hooks.adapter import handle_post_tool_use  # type: ignore
+    from lesson.hooks.antigravity import extract_record_event  # type: ignore
+    from lesson.hooks.stop import handle_stop  # type: ignore
 
 PROTOCOL_VERSION = "2024-11-05"
 

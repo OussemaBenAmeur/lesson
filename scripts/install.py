@@ -378,7 +378,6 @@ def _install_codex() -> None:
             HOOKS_DIR / "codex" / "post_tool_use_codex.py",
             HOOKS_DIR / "codex" / "stop_codex.py",
             HOOKS_DIR / "codex" / "session_start_codex.py",
-            HOOKS_DIR / "stop.py",
         ],
     )
     _install_hook_support(
@@ -389,6 +388,7 @@ def _install_codex() -> None:
             "claude_code.py",
             "codex.py",
             "session_start.py",
+            "stop.py",
         ],
     )
 
