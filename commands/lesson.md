@@ -1,68 +1,157 @@
 ---
-description: Start a tracked /lesson learning session
-argument-hint: [what you want to learn / what you're about to work on]
+description: Set up, see what you know, or get the lesson that's waiting
+argument-hint: [nothing | graph | a topic you know you're shaky on | yes]
 ---
 
-The user has invoked `/lesson` to start a tracked learning session. Their stated goal (may be empty):
+The user invoked `/lesson`. Argument:
 
 > $ARGUMENTS
 
-Your job is to set up the session state so that the PostToolUse hook begins tracking the problem-solving arc. Do the following — do not skip or reorder steps.
+Read `~/.claude/lesson/graph.json`.
 
-## 1. Generate a slug
+| Situation | Do this |
+|---|---|
+| No graph file | **Setup**, then **Teach** |
+| Argument is `graph` | **Show the graph** |
+| Argument is `yes` / `y` and `~/.claude/lesson/pending-lesson.json` exists | **Teach** that node |
+| Argument names a topic | **Teach** that topic |
+| Anything else | **Status** |
 
-Use the format `YYYYMMDD-HHMMSS` based on the current UTC timestamp. If the goal is non-empty, append a short dash-separated keyword from it (e.g., `20260416-1430-asyncio`). Keep the slug filesystem-safe (lowercase, alphanumerics and dashes only).
+---
 
-## 2. Create session directory
+# Setup
 
-Create `.claude/lessons/sessions/<slug>/` in the current working directory. Also ensure `.claude/lessons/output/` exists (create it if missing) so the final lesson has a home.
+Runs once. Under two minutes. This is the first thing a stranger experiences, so
+it has to feel like someone curious about them — not an intake form, and above
+all not an exam.
 
-## 3. Initialize session files
+## Say what this is
 
-Inside `.claude/lessons/sessions/<slug>/`, write:
+Three sentences, roughly:
 
-- **`meta.json`** — a JSON object with exactly these fields:
-  ```json
-  {
-    "slug": "<slug>",
-    "goal": "<user's goal or topic, or empty string>",
-    "notes": "<same as goal — used by /lesson-done to calibrate generation depth and style>",
-    "started_at": "<ISO 8601 UTC timestamp>",
-    "cwd": "<absolute path of the current working directory>"
-  }
-  ```
-  Both `goal` and `notes` are set to the full `$ARGUMENTS` text. `goal` is used for display in the lesson header; `notes` is read by `/lesson-done` as generation instructions. The user can include style hints directly in their argument: `/lesson asyncio blocking — explain from absolute scratch, I barely know Python` is valid and useful.
-- **`arc.jsonl`** — empty file (zero bytes). This is where the hook will append events.
-- **`summary.md`** — empty file. The compression subagent will populate this.
-- **`counter`** — file containing the single character `0` (no newline).
+> I watch how you work and notice the things you keep working around without
+> ever quite learning. Then I write you an explanation of one of them — starting
+> from the beginning, no jargon stacked on jargon. First, a rough sense of where
+> you're starting.
 
-Use the Write tool for each file. Do not use shell commands for this setup — Write is faster and cannot race.
+## Ask two things about them
 
-## 4. Activate tracking
+Use `AskUserQuestion`.
 
-Write the active-session marker at `.claude/lessons/active-session` containing just the slug string (no trailing newline, no other content). The PostToolUse hook checks for this file on every tool call and begins logging once it exists.
+1. **What do you mostly build?** Web apps / data and machine learning / systems
+   and tooling / mobile. Multi-select.
+2. **How long have you been writing code?** Under a year / 1–3 / 3–8 / longer.
 
-## 5. Confirm to the user
+These set a starting guess only. They are the weakest evidence you will ever
+have — two real observations should overturn them, in either direction. People
+underrate themselves about as often as they overrate.
 
-Print a short confirmation, exactly in this shape:
+## Ask three diagnostic questions
 
-```
-✓ /lesson tracking active
-  session: <slug>
-  goal:    <goal or "(none)">
-  log:     .claude/lessons/sessions/<slug>/
+There is **no fixed list of concepts** — the things a person can fail to
+understand are endless. Invent three questions yourself, about fundamentals that
+matter for whatever they said they build.
 
-Work normally. When you're done, run /lesson-done to generate the lesson
-(or just stop — the Stop hook will nudge you).
+Don't ask them to rate themselves; a self-rating tells you nothing. Ask a small
+question where the *answer* reveals depth. Give four options that quietly ladder
+from wrong to deep, and never mark any of them correct.
 
-Tip: your argument also guides how the lesson is written. Examples:
-  /lesson I barely know Linux — explain everything from first principles
-  /lesson asyncio issue — I know Python well, skip basic async theory
-  /lesson (no argument) — lesson will use a neutral depth
-```
+> When you rebase a branch onto main, what happens to your original commits?
+>
+> - They move onto the new base
+> - They're copied — new commits, new hashes, the originals stay in the reflog
+> - They're rewritten in place, keeping their hashes
+> - Honestly not sure
 
-## Notes
+Second answer is deep. First is workable. Third is a real misconception worth
+recording as one. "Not sure" is honest and must never feel like the losing
+option — always include it, never punish it. Someone who guesses to look good
+poisons their own graph.
 
-- If `.claude/lessons/active-session` already exists, **do not clobber it**. Read the existing slug, tell the user there's already an active session, and ask whether to continue that one or abort and start fresh. Do not silently overwrite.
-- If the user's goal argument is empty, still proceed — a goal is not required to track a session.
-- Do not call any web tools, search tools, or other side-effecting tools during this setup. This command is pure state initialization.
+## Write the graph
+
+Create `~/.claude/lesson/graph.json` following `docs/knowledge-graph.md` exactly.
+One node per thing you asked about, plus nodes for anything those obviously
+depend on.
+
+Every claim gets `"sure": "guessed"` — an interview answer is a self-report, not
+an observation — and `"from": "interview"`.
+
+Add the arrows. For each node ask: *could this be explained to someone who knows
+nothing, using only nodes that already exist?* If not, add the missing pieces as
+nodes and point arrows into it.
+
+Also create `~/.claude/lesson/lessons/`.
+
+---
+
+# Teach
+
+Pick what to teach:
+
+1. `pending-lesson.json` exists and they said yes → that node.
+2. They named a topic → match it against existing nodes, titles *and*
+   `also_called`. Create the node if it's genuinely new.
+3. Otherwise → the node with the most `why` entries that sits at `unknown` or
+   `heard-of`. Break ties toward what they said they build.
+
+Then walk that node's arrows backwards, to the roots. For each thing it needs
+first that they aren't solid on:
+
+- **`heard-of` or `can-use`** → ground it *inside* this lesson, a paragraph or
+  two, before the term first appears. Do not send them elsewhere.
+- **`unknown`** → teach that instead, and say why: *"You asked about caching.
+  One thing has to land first — that's this lesson, caching is the next one."*
+
+Never redirect more than one step down. Chains run five deep; nobody accepts
+five lessons before the answer they wanted.
+
+Read `pedagogy/lesson-style.md` and write the lesson to
+`~/.claude/lesson/lessons/NN-<slug>.html`.
+
+Chapter 0 opens with *their* real moment, pulled from the node's `why` entries —
+quote what actually happened. If every entry is `guessed`, say less rather than
+inventing a scene.
+
+Afterwards: set `taught` on the node, delete `pending-lesson.json`, and tell them
+where the file is in one line. Don't summarise the lesson. The lesson is the
+summary.
+
+---
+
+# Show the graph
+
+Read `~/.claude/lesson/graph.json` and the plugin's `viewer/graph.html`.
+
+Replace the exact string `/*__GRAPH_DATA__*/ {"nodes":[],"edges":[]}` with the
+graph JSON, write the result to `~/.claude/lesson/graph.html`, and tell them the
+path. It's a self-contained file — it opens by double-clicking.
+
+---
+
+# Status
+
+Say, briefly:
+
+- How many things are tracked, and how many sit below `can-use`
+- Whether a lesson is waiting, and where
+- The two or three strongest patterns, as plain sentences — *"three separate
+  times you've worked around which-Python-is-running without stopping to learn
+  it"*
+
+If something is clearly due, offer to write it now. **One unread lesson at a
+time, ever.** A backlog turns a coach into a source of guilt and people stop
+opening it.
+
+If nothing is due, say so and stop. Silence is a normal, correct outcome.
+
+---
+
+# Rules
+
+- The graph is theirs. Human-readable, hand-editable. If they say "I know this",
+  set it and record `"from": "self-corrected"`, `"sure": "observed"`, and never
+  argue or quietly revert it later.
+- Never claim a gap you can't point at evidence for.
+- One lesson teaches one thing.
+- Never test them. Offers, never quizzes.

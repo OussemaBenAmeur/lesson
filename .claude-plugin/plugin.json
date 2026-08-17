@@ -1,7 +1,7 @@
 {
   "name": "lesson",
-  "version": "0.3.0",
-  "description": "Turn any AI-assisted working session into a textbook-quality lesson. Tracks the problem-solving arc via hooks or manual logging, builds a session knowledge graph, and emits a grounded markdown+PDF lesson with diagrams, a quiz, and cross-session learner memory. Works on Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot CLI, OpenCode, OpenClaw, Factory Droid, Trae, and Google Antigravity.",
+  "version": "0.4.0-dev",
+  "description": "Learns where your understanding is weak while you work, then writes you a proper lesson on it — one concept, built from the ground up, never stacking jargon on jargon.",
   "author": {
     "name": "Oussema Ben Ameur"
   },
@@ -12,22 +12,8 @@
     "learning",
     "education",
     "lesson",
-    "debugging",
+    "mastery",
     "claude-code",
-    "multi-platform",
     "plugin"
-  ],
-  "platforms": [
-    "claude-code",
-    "codex",
-    "cursor",
-    "gemini",
-    "copilot",
-    "opencode",
-    "openclaw",
-    "droid",
-    "trae",
-    "antigravity"
-  ],
-  "install": "python3 scripts/install.py --platform <platform>"
+  ]
 }

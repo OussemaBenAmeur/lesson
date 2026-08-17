@@ -1,22 +1,6 @@
-# Python
+# Python (only the hook uses it, but caches still appear)
 __pycache__/
 *.pyc
-*.pyo
-*.egg-info/
-build/
-dist/
-
-# Test & coverage artifacts
-.coverage
-.coverage.*
-.hypothesis/
-.pytest_cache/
-htmlcov/
-
-# Environments
-.venv/
-venv/
-env/
 
 # Editors
 .idea/
@@ -28,8 +12,5 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local docs/build output
-docs/_build/
-
-# Local scratch / exploratory outputs
+# Local scratch
 /reflections/

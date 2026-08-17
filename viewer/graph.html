@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What you know</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fffef9; --panel:#f5f4ef; --border:#e4dfd7;
+  --text:#1a1917; --muted:#706b65; --accent:#d4622a;
+  --unknown:#c3bcb2; --heard:#d9a441; --canuse:#6b9e78; --knowswhy:#2f7a4f;
+  --serif:'Newsreader',Georgia,serif;
+  --ui:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--serif);overflow:hidden}
+
+header{
+  position:fixed;top:0;left:0;right:0;height:62px;z-index:10;
+  background:var(--bg);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:20px;padding:0 22px
+}
+header h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.01em}
+header .count{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.legend{display:flex;gap:15px;margin-left:auto;flex-wrap:wrap}
+.legend span{font-family:var(--ui);font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:50%;display:block}
+
+#stage{position:absolute;inset:62px 0 0 0}
+svg{width:100%;height:100%;display:block;cursor:grab}
+svg.dragging{cursor:grabbing}
+.link{stroke:#d5cec4;stroke-width:1.4}
+.link.hot{stroke:var(--accent);stroke-width:2.2}
+.node circle{stroke:#fffef9;stroke-width:2;cursor:pointer}
+.node.sel circle{stroke:var(--accent);stroke-width:3}
+.node text{
+  font-family:var(--ui);font-size:11px;fill:var(--text);
+  pointer-events:none;paint-order:stroke;
+  stroke:#fffef9;stroke-width:3.5px;stroke-linejoin:round
+}
+.node.dim{opacity:.22}
+.link.dim{opacity:.12}
+
+#panel{
+  position:fixed;top:62px;right:0;bottom:0;width:370px;z-index:9;
+  background:var(--panel);border-left:1px solid var(--border);
+  padding:26px 24px;overflow-y:auto;transform:translateX(100%);
+  transition:transform .22s ease
+}
+#panel.open{transform:none}
+#panel h2{font-size:21px;line-height:1.3;margin:0 0 6px;font-weight:600}
+#panel .id{font-family:var(--mono);font-size:11px;color:var(--muted);margin:0 0 18px;word-break:break-all}
+#panel .state{
+  display:inline-block;font-family:var(--ui);font-size:12px;font-weight:500;
+  padding:4px 11px;border-radius:11px;color:#fff;margin-bottom:20px
+}
+#panel h3{
+  font-family:var(--ui);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);margin:22px 0 9px;font-weight:600
+}
+#panel ul{margin:0;padding-left:17px}
+#panel li{margin-bottom:9px;font-size:15px;line-height:1.55}
+#panel .why{list-style:none;padding:0}
+#panel .why li{
+  background:var(--bg);border:1px solid var(--border);border-radius:3px;
+  padding:10px 12px;margin-bottom:8px;font-size:14.5px;line-height:1.5
+}
+#panel .why .meta{
+  font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  display:block;margin-bottom:4px
+}
+#panel .alias{font-family:var(--mono);font-size:12px;color:var(--muted)}
+#close{
+  position:absolute;top:16px;right:18px;border:none;background:none;
+  font-size:22px;color:var(--muted);cursor:pointer;line-height:1;padding:4px
+}
+#close:focus-visible,.node:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#empty{
+  position:absolute;inset:62px 0 0 0;display:grid;place-items:center;
+  text-align:center;padding:40px
+}
+#empty p{max-width:44ch;color:var(--muted);font-size:17px;line-height:1.7}
+@media (prefers-reduced-motion:reduce){#panel{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>What you know</h1>
+  <span class="count" id="count"></span>
+  <div class="legend">
+    <span><i style="background:var(--unknown)"></i>no idea</span>
+    <span><i style="background:var(--heard)"></i>heard of it</span>
+    <span><i style="background:var(--canuse)"></i>can use it</span>
+    <span><i style="background:var(--knowswhy)"></i>knows why</span>
+  </div>
+</header>
+
+<div id="stage"><svg id="svg"></svg></div>
+
+<div id="panel">
+  <button id="close" aria-label="Close">&times;</button>
+  <h2 id="p-title"></h2>
+  <p class="id" id="p-id"></p>
+  <span class="state" id="p-state"></span>
+  <div id="p-body"></div>
+</div>
+
+<script>
+const GRAPH = /*__GRAPH_DATA__*/ {"nodes":[],"edges":[]};
+
+const COLOR = {
+  "unknown":  getComputedStyle(document.documentElement).getPropertyValue('--unknown').trim(),
+  "heard-of": getComputedStyle(document.documentElement).getPropertyValue('--heard').trim(),
+  "can-use":  getComputedStyle(document.documentElement).getPropertyValue('--canuse').trim(),
+  "knows-why":getComputedStyle(document.documentElement).getPropertyValue('--knowswhy').trim()
+};
+const LABEL = {
+  "unknown":"No idea it exists","heard-of":"Would recognise the word",
+  "can-use":"Can make it work","knows-why":"Understands why it works"
+};
+const FROM = {
+  interview:"you said so at setup", error:"something broke",
+  asked:"a question you asked", delegated:"you let it happen without asking",
+  handled:"you did it yourself", "self-corrected":"you told me you knew this"
+};
+
+const svg = document.getElementById('svg');
+const panel = document.getElementById('panel');
+const nodes = (GRAPH.nodes||[]).map(n => ({...n}));
+const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+const links = (GRAPH.edges||[]).filter(e => byId[e.from] && byId[e.to])
+                               .map(e => ({source:byId[e.from], target:byId[e.to]}));
+
+document.getElementById('count').textContent =
+  nodes.length ? `${nodes.length} things · ${links.length} connections` : '';
+
+if (!nodes.length) {
+  document.getElementById('stage').innerHTML =
+    '<div id="empty"><p>Nothing here yet. This fills in as you work &mdash; ' +
+    'every time something shows what you do or don’t understand, a dot appears.</p></div>';
+} else {
+  boot();
+}
+
+function wrap(s, per=24, max=2){
+  const words = String(s).split(/\s+/), lines = [];
+  let cur = '';
+  for (const w of words){
+    if (!cur) { cur = w; }
+    else if ((cur + ' ' + w).length <= per) { cur += ' ' + w; }
+    else { lines.push(cur); cur = w; if (lines.length === max) break; }
+  }
+  if (cur && lines.length < max) lines.push(cur);
+  const used = lines.join(' ').length;
+  if (used < String(s).length) lines[lines.length-1] += '…';
+  return lines;
+}
+
+function boot(){
+  let W = svg.clientWidth, H = svg.clientHeight;
+  const NS = 'http://www.w3.org/2000/svg';
+  const deg = {};
+  links.forEach(l => { deg[l.source.id]=(deg[l.source.id]||0)+1; deg[l.target.id]=(deg[l.target.id]||0)+1; });
+
+  // spread scales with how much room each node has
+  const area = Math.max(W*H, 1);
+  const SPREAD = Math.sqrt(area / Math.max(nodes.length,1));
+  const REPEL = SPREAD * SPREAD * 0.55;
+  const RESTLEN = Math.min(SPREAD * 0.85, 210);
+
+  nodes.forEach((n,i) => {
+    const a = (i/nodes.length)*Math.PI*2;
+    n.x = W/2 + Math.cos(a)*Math.min(W,H)*0.3;
+    n.y = H/2 + Math.sin(a)*Math.min(W,H)*0.3;
+    n.vx = n.vy = 0;
+    n.r = 8 + Math.min(9, (deg[n.id]||0)*1.8);
+  });
+
+  const gL = document.createElementNS(NS,'g');
+  const gN = document.createElementNS(NS,'g');
+  svg.append(gL, gN);
+
+  const lineEls = links.map(l => {
+    const el = document.createElementNS(NS,'line');
+    el.setAttribute('class','link');
+    gL.appendChild(el); return el;
+  });
+
+  const nodeEls = nodes.map(n => {
+    const g = document.createElementNS(NS,'g');
+    g.setAttribute('class','node');
+    g.setAttribute('tabindex','0');
+    g.setAttribute('role','button');
+    g.setAttribute('aria-label', n.title || n.id);
+    const c = document.createElementNS(NS,'circle');
+    c.setAttribute('r', n.r);
+    c.setAttribute('fill', COLOR[n.known] || COLOR.unknown);
+    g.appendChild(c);
+    const lines = wrap(n.title || n.id);
+    const t = document.createElementNS(NS,'text');
+    t.setAttribute('text-anchor','middle');
+    lines.forEach((ln,k) => {
+      const ts = document.createElementNS(NS,'tspan');
+      ts.setAttribute('x', 0);
+      ts.setAttribute('dy', k === 0 ? -(n.r + 9 + (lines.length-1)*13) : 13);
+      ts.textContent = ln;
+      t.appendChild(ts);
+    });
+    g.appendChild(t);
+    g.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){e.preventDefault();select(n);} });
+    attachDrag(g, n);
+    gN.appendChild(g); return g;
+  });
+
+  let alpha = 1, raf = null;
+
+  function paint(){
+    lineEls.forEach((el,i) => {
+      el.setAttribute('x1',links[i].source.x); el.setAttribute('y1',links[i].source.y);
+      el.setAttribute('x2',links[i].target.x); el.setAttribute('y2',links[i].target.y);
+    });
+    nodeEls.forEach((g,i) => g.setAttribute('transform',`translate(${nodes[i].x},${nodes[i].y})`));
+  }
+
+  function tick(){
+    for (let i=0;i<nodes.length;i++){
+      for (let j=i+1;j<nodes.length;j++){
+        const a=nodes[i], b=nodes[j];
+        let dx=b.x-a.x, dy=b.y-a.y, d2=Math.max(dx*dx+dy*dy, 400), d=Math.sqrt(d2);
+        const f = REPEL/d2, ux=dx/d, uy=dy/d;
+        a.vx-=ux*f; a.vy-=uy*f; b.vx+=ux*f; b.vy+=uy*f;
+      }
+    }
+    links.forEach(l => {
+      const dx=l.target.x-l.source.x, dy=l.target.y-l.source.y;
+      const d=Math.sqrt(dx*dx+dy*dy)||1, f=(d-RESTLEN)*0.016;
+      const ux=dx/d, uy=dy/d;
+      l.source.vx+=ux*f; l.source.vy+=uy*f;
+      l.target.vx-=ux*f; l.target.vy-=uy*f;
+    });
+
+    let moved = 0;
+    nodes.forEach(n => {
+      if (n.fixed) { n.vx = n.vy = 0; return; }
+      n.vx += (W/2-n.x)*0.0022; n.vy += (H/2-n.y)*0.0022;
+      n.vx*=0.82; n.vy*=0.82;
+      const dx = n.vx*alpha, dy = n.vy*alpha;
+      n.x+=dx; n.y+=dy;
+      const pad = n.r + 46;
+      n.x=Math.max(pad,Math.min(W-pad,n.x));
+      n.y=Math.max(n.r+44,Math.min(H-pad,n.y));
+      moved += Math.abs(dx)+Math.abs(dy);
+    });
+
+    paint();
+    alpha *= 0.982;
+    // stop once it has genuinely settled — a graph that keeps drifting
+    // is impossible to click
+    if (alpha > 0.015 && moved > 0.4) raf = requestAnimationFrame(tick);
+    else { raf = null; alpha = 0; }
+  }
+
+  function reheat(a=0.35){
+    alpha = Math.max(alpha, a);
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  tick();
+
+  function attachDrag(g, n){
+    let down=null, moved=false;
+    g.addEventListener('pointerdown', e => {
+      down = {x:e.clientX, y:e.clientY}; moved = false;
+      g.setPointerCapture(e.pointerId);
+      svg.classList.add('dragging');
+      e.preventDefault();
+    });
+    g.addEventListener('pointermove', e => {
+      if (!down) return;
+      if (Math.abs(e.clientX-down.x) + Math.abs(e.clientY-down.y) > 4) moved = true;
+      if (!moved) return;
+      const r = svg.getBoundingClientRect();
+      n.x = e.clientX - r.left; n.y = e.clientY - r.top; n.fixed = true;
+      paint();
+    });
+    g.addEventListener('pointerup', e => {
+      svg.classList.remove('dragging');
+      if (moved) { n.fixed = false; reheat(0.2); }
+      down = null;
+      try { g.releasePointerCapture(e.pointerId); } catch(_) {}
+    });
+    // Selection lives on `click` so it still works for input paths that
+    // don't emit a full pointer sequence (assistive tech, synthetic events).
+    g.addEventListener('click', () => { if (!moved) select(n); });
+  }
+
+  // On resize, scale the existing layout rather than re-running it. A user who
+  // resizes their window should keep the map they had learned, not get a new one.
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const nW = svg.clientWidth, nH = svg.clientHeight;
+      if (!nW || !nH || (nW === W && nH === H)) return;
+      const sx = nW / W, sy = nH / H;
+      nodes.forEach(n => { n.x *= sx; n.y *= sy; });
+      W = nW; H = nH;
+      paint();
+    }, 150);
+  });
+
+  function select(n){
+    const near = new Set([n.id]);
+    links.forEach(l => {
+      if (l.source.id===n.id) near.add(l.target.id);
+      if (l.target.id===n.id) near.add(l.source.id);
+    });
+    nodeEls.forEach((g,i) => {
+      g.classList.toggle('dim', !near.has(nodes[i].id));
+      g.classList.toggle('sel', nodes[i].id===n.id);
+    });
+    lineEls.forEach((el,i) => {
+      const hot = links[i].source.id===n.id || links[i].target.id===n.id;
+      el.classList.toggle('hot', hot);
+      el.classList.toggle('dim', !hot);
+    });
+    render(n);
+  }
+
+  document.getElementById('close').addEventListener('click', () => {
+    panel.classList.remove('open');
+    nodeEls.forEach(g => g.classList.remove('dim','sel'));
+    lineEls.forEach(el => el.classList.remove('hot','dim'));
+  });
+}
+
+function render(n){
+  document.getElementById('p-title').textContent = n.title || n.id;
+  document.getElementById('p-id').textContent = n.id;
+  const s = document.getElementById('p-state');
+  s.textContent = LABEL[n.known] || n.known || 'unknown';
+  s.style.background = COLOR[n.known] || COLOR.unknown;
+
+  const needs = (GRAPH.edges||[]).filter(e => e.to===n.id).map(e => byId[e.from]).filter(Boolean);
+  const opens = (GRAPH.edges||[]).filter(e => e.from===n.id).map(e => byId[e.to]).filter(Boolean);
+  const esc = t => String(t??'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  let h = '';
+  if (n.also_called?.length)
+    h += `<h3>Also called</h3><p class="alias">${n.also_called.map(esc).join(' · ')}</p>`;
+  if (n.why?.length)
+    h += `<h3>Why it thinks that</h3><ul class="why">${n.why.map(w =>
+      `<li><span class="meta">${esc(w.date)} — ${esc(FROM[w.from]||w.from)}</span>${esc(w.note)}</li>`
+    ).join('')}</ul>`;
+  if (needs.length)
+    h += `<h3>You need these first</h3><ul>${needs.map(x=>`<li>${esc(x.title||x.id)}</li>`).join('')}</ul>`;
+  if (opens.length)
+    h += `<h3>This unlocks</h3><ul>${opens.map(x=>`<li>${esc(x.title||x.id)}</li>`).join('')}</ul>`;
+  if (n.taught)
+    h += `<h3>Lesson written</h3><p>${esc(n.taught.date||'')} — ${esc(n.taught.file||n.taught)}</p>`;
+  document.getElementById('p-body').innerHTML = h;
+  panel.classList.add('open');
+}
+</script>
+</body>
+</html>

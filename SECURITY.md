@@ -1,31 +1,56 @@
-# Security Policy
+# Security and privacy
 
-## Supported Versions
+## What this plugin touches
 
-| Version | Supported |
-|---------|-----------|
-| 0.3.x   | Yes       |
-| < 0.3   | No        |
+`lesson` reads your Claude Code session transcripts and keeps a file describing
+what you appear to understand. That is a real privacy surface, so here is
+exactly what happens.
 
-## What This Project Handles
+**Reads:**
 
-`lesson-ai` reads tool events from your AI coding session and writes files to your local filesystem (`.claude/lessons/` inside your project). It makes no network requests of its own, stores no credentials, and does not communicate with any external service.
+- `~/.claude/projects/<project>/<session>.jsonl` — the transcripts Claude Code
+  already writes. These contain everything you typed, everything Claude said,
+  and the full input and output of every command run.
 
-## Potential Risk Areas
+**Writes:**
 
-- **Hook execution** — `hooks/post_tool_use.py` runs as a subprocess on every tool call inside Claude Code. It writes to `arc.jsonl` and spawns `lesson compress`. It never reads environment variables, credentials, or secrets.
-- **Session data** — `arc.jsonl` and `session_graph.json` may contain fragments of your code, file paths, and error messages. They live in your project directory and are never uploaded anywhere.
-- **PDF rendering** — `scripts/render_pdf.py` invokes local tools (e.g. `weasyprint`, `mermaid-js`) if available. No external URLs are fetched.
+- `~/.claude/lesson/graph.json` — the knowledge graph. Statements about what you
+  understand, each with the evidence behind it.
+- `~/.claude/lesson/lessons/*.html` — generated lessons.
+- `~/.claude/lesson/state.json`, `pending-lesson.json`, `analysis.lock` —
+  bookkeeping.
 
-## Reporting a Vulnerability
+**Runs:**
 
-If you find a security issue, please **do not open a public GitHub issue**.
+- `claude --bare -p …` as a detached background process, roughly once every 12
+  turns. It uses your existing Claude Code login and consumes your usage. It
+  runs with `--bare`, which skips hooks, so it cannot trigger itself.
 
-Email: oussemabenameur9@gmail.com
+**Never:**
 
-Include:
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact
+- Makes network requests of its own
+- Reads credentials, environment variables, or secret files
+- Sends anything off your machine
+- Modifies your code or runs your tests
 
-You will receive a response within 72 hours. If the issue is confirmed, a fix will be released as a patch version and credited to you (unless you prefer to stay anonymous).
+## Things worth knowing
+
+**Your transcripts contain whatever you put in them.** If you have pasted a
+secret into a Claude Code session, it is in that transcript, and the background
+analysis reads it. The analysis is instructed to extract only statements about
+your understanding, and never to copy code, keys, or file contents into the
+graph — but that is an instruction to a model, not a guarantee. Treat
+`graph.json` as roughly as sensitive as your transcripts.
+
+**The graph is a file about you.** It is plain text in your home directory and
+it is yours. Open it, edit it, delete entries, delete the whole thing. Telling
+the plugin "I know this" is always accepted and never quietly reverted.
+
+**Everything is local.** Deleting `~/.claude/lesson/` removes every trace.
+
+## Reporting a problem
+
+Please don't open a public issue for a security bug.
+
+Email: oussemabenameur9@gmail.com — include what you found, how to reproduce it,
+and what you think the impact is. You'll get a reply within 72 hours.

@@ -8,7 +8,7 @@
     {
       "name": "lesson",
       "source": ".",
-      "description": "Turn a Claude Code debugging session into a textbook-quality lesson grounded in your real code, errors, and attempts."
+      "description": "Notices what you don't understand while you work with Claude, then explains that one thing from the ground up."
     }
   ]
 }
